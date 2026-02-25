@@ -12,9 +12,9 @@ import ollama
 # --- CẤU HÌNH CƠ BẢN ---
 FILE_PATH = "data.xlsx"   
 SHEET_NAME = "NEW_CACHE_DATA_HIDDEN_"
-MAX_WORKERS = 1       # Bắt buộc để 1 luồng khi chạy AI Local để tránh treo máy
+MAX_WORKERS = 3       # Bắt buộc để 1 luồng khi chạy AI Local để tránh treo máy
 SAVE_EVERY = 2        
-MAX_TEST_VIDEOS = 1  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
+MAX_TEST_VIDEOS = 300  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
 
 # Biến toàn cục
 stop_flag = False
@@ -131,12 +131,12 @@ def generate_summary(caption_text, row_idx):
         
     prompt = f"""
     You are a video data analyst. Read the YouTube caption below and summarize its content for in-depth search.
-    Please return results strictly following this format (write concisely, directly in Vietnamese, except for NICHE KEYWORDS which remain in English):
+    Please return results strictly following this format (write concisely, directly in English):
     1. MAIN STORY: (Briefly describe what happened in 2-3 sentences).
     2. CHARACTERS & RELATIONSHIPS: (Who was involved? What was their relationship?).
     3. LOCATION / CONTEXT: (Where did the event take place?).
-    4. TYPE OF CONFLICT: (Conflict over property, verbal, physical, legal, etc.).
-    5. NICHE KEYWORDS (TAGS): (List 5-7) English keywords that accurately describe the video's niche. For example: neighbor dispute, crazy ex, public freakout, karen, road rage.
+    4. TYPE OF CONFLICT: (Conflict over property, verbal, physical, legal, neighborly conflict, racial discrimination, boyfriend/girlfriend, sovereign citizens, etc.).
+    5. NICHE KEYWORDS (TAGS): (List 5-7) English keywords that accurately describe the video's niche. For example: neighbor dispute, crazy ex, public freakout, karen, road rage, phân biệt chủng tộc, sovereign citizen.,..
     Caption:
     {caption_text[:30000]}
     """
