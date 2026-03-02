@@ -115,7 +115,7 @@ const DataTable = () => {
                     <img
                         src={src}
                         alt="Thumbnail"
-                        style={{ width: '120px', height: 'auto', borderRadius: '4px', objectFit: 'cover', display: 'block' }}
+                        style={{ width: '100%', height: 'auto', borderRadius: '4px', objectFit: 'cover', display: 'block' }}
                         onError={(e) => { e.target.style.display = 'none'; }}
                     />
                 );

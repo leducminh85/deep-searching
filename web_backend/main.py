@@ -41,9 +41,17 @@ def get_data():
         df = df[cols_to_keep]
         
         # Further filter: remove columns where ALL values are empty strings
-        df = df.loc[:, (df != "").any(axis=0)]
+        # BUT KEEP the "Thumbnail" column even if empty, so frontend can derive it from URLs
+        df = df.loc[:, (df != "").any(axis=0) | (df.columns == "Thumbnail")]
         
         records = df.to_dict(orient="records")
+        
+        # If the Thumbnail column was kept but is empty, ensure the key exists in records
+        if "Thumbnail" in df.columns:
+            for record in records:
+                if "Thumbnail" not in record:
+                    record["Thumbnail"] = ""
+
         return {"data": records}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
