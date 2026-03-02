@@ -124,7 +124,7 @@ const DataTable = () => {
                 <img
                     src={value}
                     alt="Thumbnail"
-                    style={{ maxWidth: '120px', maxHeight: '90px', borderRadius: '4px', objectFit: 'cover' }}
+                    style={{ width: '100%', height: 'auto', borderRadius: '4px', objectFit: 'cover' }}
                     onError={(e) => { e.target.style.display = 'none'; }}
                 />
             );
@@ -161,6 +161,12 @@ const DataTable = () => {
                     onChange={(e) => setSearchTerm(e.target.value)}
                     style={{ flex: 1 }}
                 />
+                <span style={{ fontSize: '0.875rem', color: '#6b7280', whiteSpace: 'nowrap' }}>
+                    {searchTerm
+                        ? `${filteredData.length} / ${data.length} videos`
+                        : `${data.length} videos`
+                    }
+                </span>
             </div>
 
             {loading && <div className="empty-state"><div className="loader"></div> <p style={{ marginTop: '1rem', color: '#6b7280' }}>Loading data...</p></div>}
