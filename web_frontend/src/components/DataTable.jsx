@@ -79,23 +79,48 @@ const DataTable = () => {
     };
 
     const visibleData = sortedData.slice(0, visibleRows);
-    const headers = data.length > 0 ? Object.keys(data[0]) : [];
+
+    // Filter out unusable headers (empty strings or all-null columns)
+    const headers = useMemo(() => {
+        if (data.length === 0) return [];
+        return Object.keys(data[0]).filter(h => h && !h.startsWith('__EMPTY') && !h.startsWith('Unnamed'));
+    }, [data]);
+
+    // Helper to extract YouTube ID
+    const getYouTubeID = (url) => {
+        if (!url) return null;
+        const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[7].length === 11) ? match[7] : null;
+    };
 
     // Helper to render cell value
-    const renderCell = (header, value) => {
-        if (!value) return value;
+    const renderCell = (header, value, row) => {
         const lowerHeader = header.toLowerCase();
 
-        // 1. If column is thumbnail
+        // 1. If column is thumbnail or we want to show a thumbnail
         if (lowerHeader === 'thumbnail') {
-            return (
-                <img
-                    src={value}
-                    alt="Thumbnail"
-                    style={{ width: '100%', height: 'auto', borderRadius: '4px', objectFit: 'cover' }}
-                    onError={(e) => { e.target.style.display = 'none'; }}
-                />
-            );
+            let src = value;
+            // If empty, try to get from URL
+            if (!src || src === '#') {
+                const videoUrl = row['URL'] || row['url'] || row['Link'];
+                const videoId = getYouTubeID(videoUrl);
+                if (videoId) {
+                    src = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+                }
+            }
+
+            if (src) {
+                return (
+                    <img
+                        src={src}
+                        alt="Thumbnail"
+                        style={{ width: '120px', height: 'auto', borderRadius: '4px', objectFit: 'cover', display: 'block' }}
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                );
+            }
+            return null;
         }
 
         // 2. If column string is a URL containing http
@@ -158,7 +183,7 @@ const DataTable = () => {
                                         {headers.map(header => (
                                             <td key={header}>
                                                 <div className="scroll-cell">
-                                                    {renderCell(header, row[header])}
+                                                    {renderCell(header, row[header], row)}
                                                 </div>
                                             </td>
                                         ))}

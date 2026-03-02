@@ -35,6 +35,14 @@ def get_data():
             df = pd.read_excel(DATA_FILE_PATH, engine="openpyxl")
             
         df = df.fillna("")
+        
+        # Remove columns that are completely empty or started with "Unnamed"
+        cols_to_keep = [col for col in df.columns if not str(col).startswith("Unnamed")]
+        df = df[cols_to_keep]
+        
+        # Further filter: remove columns where ALL values are empty strings
+        df = df.loc[:, (df != "").any(axis=0)]
+        
         records = df.to_dict(orient="records")
         return {"data": records}
     except Exception as e:
