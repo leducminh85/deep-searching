@@ -24,8 +24,20 @@ const AdminPage = () => {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Mật khẩu không đúng');
+                let errorMessage = 'Mật khẩu không đúng';
+                try {
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        const errorData = await response.json();
+                        errorMessage = errorData.detail || errorMessage;
+                    } else {
+                        const text = await response.text();
+                        errorMessage = text || errorMessage;
+                    }
+                } catch (e) {
+                    // Fallback if parsing fails
+                }
+                throw new Error(errorMessage);
             }
 
             setIsAuthenticated(true);
@@ -56,8 +68,23 @@ const AdminPage = () => {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Upload failed');
+                if (response.status === 413) {
+                    throw new Error('File quá lớn! Vercel chỉ cho phép tải file dưới 4.5MB. Vui lòng chia nhỏ file hoặc dùng VPS.');
+                }
+
+                let errorMessage = 'Upload failed';
+                try {
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        const errorData = await response.json();
+                        errorMessage = errorData.detail || errorMessage;
+                    } else {
+                        errorMessage = await response.text();
+                    }
+                } catch (e) {
+                    // Fallback
+                }
+                throw new Error(errorMessage);
             }
 
             setUploadSuccess('Tải lên dữ liệu thành công!');
