@@ -49,7 +49,21 @@ app.get('/api/data', (req, res) => {
         }
 
         const sheet = workbook.Sheets[sheetName];
-        const records = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+        let records = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+        // Remove __EMPTY columns and columns where all values are empty
+        if (records.length > 0) {
+            const allKeys = Object.keys(records[0]);
+            const validKeys = allKeys.filter(key => {
+                if (key.startsWith('__EMPTY')) return false;
+                return records.some(row => row[key] !== '' && row[key] != null);
+            });
+            records = records.map(row => {
+                const filtered = {};
+                validKeys.forEach(key => { filtered[key] = row[key]; });
+                return filtered;
+            });
+        }
 
         res.json({ data: records });
     } catch (err) {
