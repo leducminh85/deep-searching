@@ -12,9 +12,9 @@ import ollama
 # --- CẤU HÌNH CƠ BẢN ---
 FILE_PATH = "data.xlsx"   
 SHEET_NAME = "NEW_CACHE_DATA_HIDDEN_"
-MAX_WORKERS = 3       # Bắt buộc để 1 luồng khi chạy AI Local để tránh treo máy
+MAX_WORKERS = 1      # QUAN TRỌNG: Đã đổi thành 1 luồng để tránh tràn VRAM khi AI đọc đoạn text dài
 SAVE_EVERY = 2        
-MAX_TEST_VIDEOS = 300  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
+MAX_TEST_VIDEOS = 500  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
 
 # Biến toàn cục
 stop_flag = False
@@ -23,7 +23,6 @@ save_lock = threading.Lock()
 success_count = 0
 wb = None
 ws = None
-
 def clean_for_excel(text):
     """Tẩy rửa triệt để các ký tự rác làm hỏng cấu trúc XML của Excel"""
     if not isinstance(text, str):
@@ -135,23 +134,29 @@ def generate_summary(caption_text, row_idx):
     1. MAIN STORY: (Briefly describe what happened in 2-3 sentences).
     2. CHARACTERS & RELATIONSHIPS: (Who was involved? What was their relationship?).
     3. LOCATION / CONTEXT: (Where did the event take place?).
-    4. TYPE OF CONFLICT: (Conflict over property, verbal, physical, legal, neighborly conflict, racial discrimination, boyfriend/girlfriend, sovereign citizens, etc.).
+    4. TYPE OF CONFLICT: (Conflict over property, verbal, physical, legal, mâu thuẫn hàng xóm, phân biệt chủng tộc, bạn trai bạn gái, công dân có chủ quyền, etc.).
     5. NICHE KEYWORDS (TAGS): (List 5-7) English keywords that accurately describe the video's niche. For example: neighbor dispute, crazy ex, public freakout, karen, road rage, phân biệt chủng tộc, sovereign citizen.,..
     Caption:
     {caption_text[:30000]}
     """
     
     try:
-        # Gọi trực tiếp model Llama 3.1 đã tải trên máy
-        response = ollama.chat(model='llama3.1', messages=[
-            {
-                'role': 'user',
-                'content': prompt,
-            },
-        ])
+        # CẬP NHẬT: Đổi sang model llama3.2:3b siêu tốc và mở rộng Context Window
+        response = ollama.chat(
+            model='llama3.2:3b', 
+            messages=[
+                {
+                    'role': 'user',
+                    'content': prompt,
+                },
+            ],
+            options={
+                'num_ctx': 8192  # QUAN TRỌNG: Mở rộng bộ nhớ để AI đọc hết được 30,000 ký tự đầu vào
+            }
+        )
         return response['message']['content'].strip()
     except Exception as e:
-        print(f"[Dòng {row_idx}] ❌ Lỗi Local AI: Có thể Ollama chưa chạy hoặc model quá nặng. Chi tiết: {e}")
+        print(f"[Dòng {row_idx}] ❌ Lỗi Local AI: Có thể Ollama chưa chạy, chưa tải model llama3.2:3b hoặc model quá nặng. Chi tiết: {e}")
         return "ERROR_AI"
 
 def process_row(row_idx, url, existing_caption, existing_summary):
@@ -185,7 +190,7 @@ def process_row(row_idx, url, existing_caption, existing_summary):
     # 2. Xử lý Summary (Chỉ chạy khi đã có caption và chưa có summary hợp lệ)
     if final_caption and final_caption != "#" and final_caption != "ERROR":
         if existing_summary is None or str(existing_summary).strip() == "" or "ERROR" in str(existing_summary):
-            print(f"  [Dòng {row_idx}] 🤖 AI đang đọc và tóm tắt nội dung (có thể mất vài chục giây)...")
+            print(f"  [Dòng {row_idx}] 🤖 Llama 3.2 3B đang đọc và tóm tắt nội dung...")
             final_summary = generate_summary(final_caption, row_idx)
     else:
         final_summary = "#" # Nếu video lỗi không có caption thì summary cũng bỏ qua
@@ -213,18 +218,14 @@ def main():
     except ValueError:
         print("Lỗi: Không tìm thấy cột 'URL' ở dòng đầu tiên của Excel!")
         return
-        
-    # Tạo cột Caption nếu chưa có
-# Giả sử headers là danh sách tiêu đề hiện tại: headers = [cell.value for cell in ws[1]]
 
     # 1. Xử lý cột Caption (Cột E - Vị trí 5)
     if 'Caption' in headers:
         caption_col_idx = headers.index('Caption') + 1
     else:
         caption_col_idx = 5
-        ws.insert_cols(caption_col_idx)  # Chèn một cột trống tại vị trí E
+        ws.insert_cols(caption_col_idx)  
         ws.cell(row=1, column=caption_col_idx).value = 'Caption'
-        # Cập nhật lại danh sách headers sau khi chèn để tính toán chính xác cho cột tiếp theo
         headers = [cell.value for cell in ws[1]]
 
     # 2. Xử lý cột Summary (Cột F - Vị trí 6)
@@ -232,7 +233,7 @@ def main():
         summary_col_idx = headers.index('Summary') + 1
     else:
         summary_col_idx = 6
-        ws.insert_cols(summary_col_idx)  # Chèn một cột trống tại vị trí F
+        ws.insert_cols(summary_col_idx)  
         ws.cell(row=1, column=summary_col_idx).value = 'Summary'
         headers = [cell.value for cell in ws[1]]
 
