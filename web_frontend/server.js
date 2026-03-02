@@ -13,7 +13,7 @@ const app = express();
 const PORT = 8000;
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'data.xlsx');
-const ADMIN_PASSWORD = 'admin';
+const ADMIN_PASSWORD = 'Leducminh123';
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {

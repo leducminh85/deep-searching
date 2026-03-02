@@ -29,38 +29,6 @@ const DataTable = () => {
         fetchData();
     }, []);
 
-    const handleFileUpload = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        setLoading(true);
-        setError(null);
-
-        const formData = new FormData();
-        formData.append('password', 'admin');
-        formData.append('file', file);
-
-        try {
-            const response = await fetch('/api/upload', {
-                method: 'POST',
-                body: formData,
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Upload failed');
-            }
-
-            // After uploading, fetch the latest data from server
-            await fetchData();
-        } catch (err) {
-            setError(err.message || 'Error uploading file. Please try again.');
-        } finally {
-            setLoading(false);
-            e.target.value = null; // reset input
-        }
-    };
-
     const sortData = (key) => {
         let direction = 'asc';
         if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -145,14 +113,6 @@ const DataTable = () => {
     return (
         <div className="table-container">
             <div className="toolbar" style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                <input
-                    type="file"
-                    accept=".xlsx, .xls"
-                    onChange={handleFileUpload}
-                    className="file-input"
-                    style={{ padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontSize: '0.875rem', cursor: 'pointer' }}
-                    title="Upload new Data File to server"
-                />
                 <input
                     type="text"
                     className="search-input"
