@@ -13,7 +13,7 @@ const DataTable = () => {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch('http://localhost:8000/api/data');
+            const response = await fetch('/api/data');
             if (!response.ok) throw new Error('Failed to fetch data from server');
             const result = await response.json();
             setData(result.data || []);
@@ -41,7 +41,7 @@ const DataTable = () => {
         formData.append('file', file);
 
         try {
-            const response = await fetch('http://localhost:8000/api/upload', {
+            const response = await fetch('/api/upload', {
                 method: 'POST',
                 body: formData,
             });
