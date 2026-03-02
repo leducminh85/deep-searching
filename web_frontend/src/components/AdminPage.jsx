@@ -8,7 +8,7 @@ const AdminPage = () => {
     const [file, setFile] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState(null);
-    const [uploadSuccess, setUploadSuccess] = useState(null);
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -18,7 +18,7 @@ const AdminPage = () => {
         formData.append('password', password);
 
         try {
-            const response = await fetch('/api/verify', {
+            const response = await fetch(`${API_BASE}/api/verify`, {
                 method: 'POST',
                 body: formData,
             });
@@ -62,7 +62,7 @@ const AdminPage = () => {
         formData.append('file', file);
 
         try {
-            const response = await fetch('/api/upload', {
+            const response = await fetch(`${API_BASE}/api/upload`, {
                 method: 'POST',
                 body: formData,
             });

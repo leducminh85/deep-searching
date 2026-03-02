@@ -1,0 +1,31 @@
+services:
+  # Backend FastAPI
+  - type: web
+    name: deep-searching-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    rootDir: web_backend
+    envVars:
+      - key: ADMIN_PASSWORD
+        sync: false # Bạn sẽ nhập trực tiếp trên giao diện Render
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        sync: false
+
+  # Frontend Static Site
+  - type: web
+    name: deep-searching-frontend
+    env: static
+    buildCommand: npm install && npm run build
+    publishPath: ./dist
+    rootDir: web_frontend
+    envVars:
+      - key: VITE_API_BASE_URL
+        fromService:
+          name: deep-searching-backend
+          type: web
+          property: host

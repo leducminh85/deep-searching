@@ -10,15 +10,13 @@ const DataTable = () => {
     const [visibleRows, setVisibleRows] = useState(30);
     const [showScrollTop, setShowScrollTop] = useState(false);
 
-    // Column resizing state
-    const [columnWidths, setColumnWidths] = useState({});
-    const resizingRef = useRef(null);
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
     const fetchData = async () => {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch('/api/data');
+            const response = await fetch(`${API_BASE}/api/data`);
             if (!response.ok) throw new Error('Failed to fetch data from server');
             const result = await response.json();
             setData(result.data || []);
