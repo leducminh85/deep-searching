@@ -3,6 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import os
 import shutil
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI()
 
@@ -16,7 +20,7 @@ app.add_middleware(
 )
 
 DATA_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "data.xlsx")
-ADMIN_PASSWORD = "admin" # Simple password for upload
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Leducminh123")
 
 @app.get("/api/data")
 def get_data():
@@ -35,6 +39,12 @@ def get_data():
         return {"data": records}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/verify")
+async def verify_password(password: str = Form(...)):
+    if password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
+    return {"status": "ok"}
 
 @app.post("/api/upload")
 async def upload_file(password: str = Form(...), file: UploadFile = File(...)):

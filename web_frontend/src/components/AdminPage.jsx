@@ -10,13 +10,27 @@ const AdminPage = () => {
     const [uploadError, setUploadError] = useState(null);
     const [uploadSuccess, setUploadSuccess] = useState(null);
 
-    const handleLogin = (e) => {
+    const handleLogin = async (e) => {
         e.preventDefault();
-        if (password === 'Leducminh123') {
+        setAuthError('');
+
+        const formData = new FormData();
+        formData.append('password', password);
+
+        try {
+            const response = await fetch('/api/verify', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Mật khẩu không đúng');
+            }
+
             setIsAuthenticated(true);
-            setAuthError('');
-        } else {
-            setAuthError('Mật khẩu không đúng');
+        } catch (err) {
+            setAuthError(err.message || 'Lỗi xác thực mật khẩu.');
         }
     };
 
@@ -32,7 +46,7 @@ const AdminPage = () => {
         setUploadSuccess(null);
 
         const formData = new FormData();
-        formData.append('password', 'Leducminh123');
+        formData.append('password', password); // Use the password state instead of hardcoded
         formData.append('file', file);
 
         try {
