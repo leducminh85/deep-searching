@@ -10,7 +10,12 @@ const DataTable = () => {
     const [visibleRows, setVisibleRows] = useState(30);
     const [showScrollTop, setShowScrollTop] = useState(false);
 
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+    const rawApiBase = import.meta.env.VITE_API_BASE_URL || '';
+    const API_BASE = rawApiBase ? (rawApiBase.startsWith('http') ? rawApiBase : `https://${rawApiBase}`) : '';
+
+    // Column resizing state
+    const [columnWidths, setColumnWidths] = useState({});
+    const resizingRef = useRef(null);
 
     const fetchData = async () => {
         setLoading(true);

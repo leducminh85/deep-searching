@@ -8,7 +8,9 @@ const AdminPage = () => {
     const [file, setFile] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState(null);
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+    const [uploadSuccess, setUploadSuccess] = useState(null);
+    const rawApiBase = import.meta.env.VITE_API_BASE_URL || '';
+    const API_BASE = rawApiBase ? (rawApiBase.startsWith('http') ? rawApiBase : `https://${rawApiBase}`) : '';
 
     const handleLogin = async (e) => {
         e.preventDefault();
