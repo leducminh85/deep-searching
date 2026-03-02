@@ -44,7 +44,7 @@ const AdminPage = () => {
 
             setIsAuthenticated(true);
         } catch (err) {
-            setAuthError(err.message || 'Lỗi xác thực mật khẩu.');
+            setAuthError(`${err.message} (Đang gọi tới: ${API_BASE || 'chưa có API_BASE'}/api/verify)`);
         }
     };
 

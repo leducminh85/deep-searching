@@ -27,7 +27,7 @@ const DataTable = () => {
             setData(result.data || []);
             setVisibleRows(30);
         } catch (err) {
-            setError(err.message);
+            setError(`${err.message} (URL: ${API_BASE || 'chưa có API_BASE'}/api/data)`);
         } finally {
             setLoading(false);
         }
