@@ -28,7 +28,7 @@ function App() {
               {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
             <nav>
-              <Link to="/admin" className="btn" style={{ background: 'transparent', border: '1px solid var(--border-color)', boxShadow: 'none' }}>Admin Panel</Link>
+              <Link to="/admin" className="btn" style={{ background: 'transparent', border: '1px solid var(--border-color)', boxShadow: 'none', color: 'var(--text-color)' }}>Admin Panel</Link>
             </nav>
           </div>
         </header>
