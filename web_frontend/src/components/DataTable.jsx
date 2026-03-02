@@ -192,77 +192,79 @@ const DataTable = () => {
     };
 
     return (
-        <div className="table-container">
-            <div className="toolbar">
-                <input
-                    type="text"
-                    className="search-input"
-                    placeholder="Tìm kiếm nhanh trong toàn bộ các cột..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
-                    {searchTerm
-                        ? `Tìm thấy ${filteredData.length} / ${data.length}`
-                        : `${data.length} video`
-                    }
-                </span>
-            </div>
-
-            {loading && (
-                <div className="empty-state">
-                    <div className="loader" style={{ margin: '0 auto 1.5rem' }}></div>
-                    <p>Đang tải dữ liệu từ Excel...</p>
+        <>
+            <div className="table-container">
+                <div className="toolbar">
+                    <input
+                        type="text"
+                        className="search-input"
+                        placeholder="Tìm kiếm nhanh trong toàn bộ các cột..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                    <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
+                        {searchTerm
+                            ? `Tìm thấy ${filteredData.length} / ${data.length}`
+                            : `${data.length} video`
+                        }
+                    </span>
                 </div>
-            )}
-            {error && <div className="empty-state" style={{ color: 'var(--accent-color)' }}>Lỗi: {error}</div>}
 
-            {!loading && !error && (
-                <div className="table-wrapper">
-                    <table>
-                        <thead>
-                            <tr>
-                                {headers.map(header => (
-                                    <th
-                                        key={header}
-                                        className={getHeaderClass(header)}
-                                        style={columnWidths[header] ? { width: `${columnWidths[header]}px`, minWidth: 'auto', maxWidth: 'none' } : {}}
-                                    >
-                                        <div className="th-content" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <span onClick={() => sortData(header)} style={{ cursor: 'pointer', flex: 1 }}>{header}</span>
-                                            <span style={{ color: sortConfig.key === header ? 'var(--primary-color)' : 'transparent', fontSize: '0.65rem' }}>
-                                                {sortConfig.direction === 'asc' ? '▲' : '▼'}
-                                            </span>
-                                        </div>
-                                        <div className="resize-handle" onMouseDown={(e) => startResizing(header, e)}></div>
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {visibleData.length > 0 ? (
-                                visibleData.map((row, index) => (
-                                    <tr key={index}>
-                                        {headers.map(header => (
-                                            <td key={header} className={getHeaderClass(header)}>
-                                                <div className="scroll-cell">
-                                                    {renderCell(header, row[header], row)}
-                                                </div>
-                                            </td>
-                                        ))}
-                                    </tr>
-                                ))
-                            ) : (
+                {loading && (
+                    <div className="empty-state">
+                        <div className="loader" style={{ margin: '0 auto 1.5rem' }}></div>
+                        <p>Đang tải dữ liệu từ Excel...</p>
+                    </div>
+                )}
+                {error && <div className="empty-state" style={{ color: 'var(--accent-color)' }}>Lỗi: {error}</div>}
+
+                {!loading && !error && (
+                    <div className="table-wrapper">
+                        <table>
+                            <thead>
                                 <tr>
-                                    <td colSpan={headers.length || 1} className="empty-state">
-                                        Không tìm thấy dữ liệu phù hợp.
-                                    </td>
+                                    {headers.map(header => (
+                                        <th
+                                            key={header}
+                                            className={getHeaderClass(header)}
+                                            style={columnWidths[header] ? { width: `${columnWidths[header]}px`, minWidth: 'auto', maxWidth: 'none' } : {}}
+                                        >
+                                            <div className="th-content" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <span onClick={() => sortData(header)} style={{ cursor: 'pointer', flex: 1 }}>{header}</span>
+                                                <span style={{ color: sortConfig.key === header ? 'var(--primary-color)' : 'transparent', fontSize: '0.65rem' }}>
+                                                    {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                                                </span>
+                                            </div>
+                                            <div className="resize-handle" onMouseDown={(e) => startResizing(header, e)}></div>
+                                        </th>
+                                    ))}
                                 </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+                            </thead>
+                            <tbody>
+                                {visibleData.length > 0 ? (
+                                    visibleData.map((row, index) => (
+                                        <tr key={index}>
+                                            {headers.map(header => (
+                                                <td key={header} className={getHeaderClass(header)}>
+                                                    <div className="scroll-cell">
+                                                        {renderCell(header, row[header], row)}
+                                                    </div>
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan={headers.length || 1} className="empty-state">
+                                            Không tìm thấy dữ liệu phù hợp.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
 
             <button
                 className={`scroll-to-top ${showScrollTop ? 'visible' : ''}`}
@@ -271,7 +273,7 @@ const DataTable = () => {
             >
                 <ArrowUp size={24} />
             </button>
-        </div>
+        </>
     );
 };
 
