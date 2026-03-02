@@ -74,25 +74,28 @@ const AdminPage = () => {
     // Password popup
     if (!isAuthenticated) {
         return (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '70vh' }}>
                 <div className="admin-card">
-                    <h2 style={{ marginBottom: '0.5rem' }}>🔒 Admin</h2>
-                    <p style={{ marginBottom: '1.5rem', color: '#6b7280', fontSize: '0.875rem' }}>
-                        Nhập mật khẩu để truy cập trang quản trị.
-                    </p>
+                    <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔐</div>
+                        <h2 style={{ marginBottom: '0.5rem', color: '#fff' }}>Quản trị viên</h2>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                            Vui lòng nhập mật khẩu hệ thống
+                        </p>
+                    </div>
                     <form onSubmit={handleLogin}>
                         <div className="form-group">
                             <input
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                placeholder="Nhập mật khẩu..."
+                                placeholder="••••••••"
                                 autoFocus
                             />
                         </div>
-                        {authError && <div className="error-message" style={{ marginBottom: '1rem' }}>{authError}</div>}
-                        <button type="submit" className="btn" style={{ width: '100%' }}>
-                            Đăng nhập
+                        {authError && <div className="error-message" style={{ marginBottom: '1.5rem', textAlign: 'center' }}>{authError}</div>}
+                        <button type="submit" className="btn" style={{ width: '100%', justifyContent: 'center', padding: '0.875rem' }}>
+                            Truy cập ngay
                         </button>
                     </form>
                 </div>
@@ -102,31 +105,38 @@ const AdminPage = () => {
 
     // Upload form (after authenticated)
     return (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '70vh' }}>
             <div className="admin-card">
-                <h2 style={{ marginBottom: '0.5rem' }}>📤 Upload Data</h2>
-                <p style={{ marginBottom: '1.5rem', color: '#6b7280', fontSize: '0.875rem' }}>
-                    Tải lên file data.xlsx mới để cập nhật hệ thống.
-                </p>
+                <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📦</div>
+                    <h2 style={{ marginBottom: '0.5rem', color: '#fff' }}>Cập nhật dữ liệu</h2>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                        Tải file Excel mới nhất để làm mới hệ thống
+                    </p>
+                </div>
                 <form onSubmit={handleUpload}>
                     <div className="form-group">
-                        <label htmlFor="admin-file-input">File Excel (.xlsx)</label>
-                        <input
-                            id="admin-file-input"
-                            type="file"
-                            accept=".xlsx"
-                            onChange={(e) => setFile(e.target.files[0])}
-                            className="file-input"
-                        />
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', cursor: 'pointer', padding: '2rem', border: '2px dashed var(--glass-border)', borderRadius: '16px', justifyContent: 'center' }}>
+                            <span style={{ fontSize: '1.25rem' }}>{file ? '📄' : '➕'}</span>
+                            <span style={{ color: file ? '#fff' : 'var(--text-muted)' }}>
+                                {file ? file.name : 'Chọn file .xlsx từ máy tính'}
+                            </span>
+                            <input
+                                type="file"
+                                accept=".xlsx"
+                                onChange={(e) => setFile(e.target.files[0])}
+                                style={{ display: 'none' }}
+                            />
+                        </label>
                     </div>
 
-                    {uploadError && <div className="error-message">{uploadError}</div>}
-                    {uploadSuccess && <div className="success-message">{uploadSuccess}</div>}
+                    {uploadError && <div className="error-message" style={{ textAlign: 'center', marginBottom: '1rem' }}>{uploadError}</div>}
+                    {uploadSuccess && <div className="success-message" style={{ textAlign: 'center', marginBottom: '1rem' }}>{uploadSuccess}</div>}
 
-                    <button type="submit" className="btn" disabled={uploading} style={{ width: '100%', marginTop: '1rem' }}>
+                    <button type="submit" className="btn" disabled={uploading} style={{ width: '100%', justifyContent: 'center', padding: '0.875rem' }}>
                         {uploading ? (
-                            <><span className="loader" style={{ width: '1rem', height: '1rem', marginRight: '0.5rem', borderWidth: '2px' }}></span> Đang tải lên...</>
-                        ) : 'Tải lên dữ liệu'}
+                            <><span className="loader" style={{ width: '1rem', height: '1rem' }}></span> Đang xử lý...</>
+                        ) : 'Tải lên ngay'}
                     </button>
                 </form>
             </div>

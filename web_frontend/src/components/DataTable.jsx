@@ -137,40 +137,42 @@ const DataTable = () => {
 
     return (
         <div className="table-container">
-            <div className="toolbar" style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="toolbar">
                 <input
                     type="text"
                     className="search-input"
-                    placeholder="Search all columns..."
+                    placeholder="Tìm kiếm nhanh trong toàn bộ các cột..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    style={{ flex: 1 }}
                 />
-                <span style={{ fontSize: '0.875rem', color: '#6b7280', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
                     {searchTerm
-                        ? `${filteredData.length} / ${data.length} videos`
-                        : `${data.length} videos`
+                        ? `Tìm thấy ${filteredData.length} / ${data.length}`
+                        : `${data.length} video`
                     }
                 </span>
             </div>
 
-            {loading && <div className="empty-state"><div className="loader"></div> <p style={{ marginTop: '1rem', color: '#6b7280' }}>Loading data...</p></div>}
-            {error && <div className="empty-state error-message">Error: {error}</div>}
+            {loading && (
+                <div className="empty-state">
+                    <div className="loader" style={{ margin: '0 auto 1.5rem' }}></div>
+                    <p>Đang tải dữ liệu từ Excel...</p>
+                </div>
+            )}
+            {error && <div className="empty-state" style={{ color: 'var(--accent-color)' }}>Lỗi: {error}</div>}
 
             {!loading && !error && (
-                <div className="table-wrapper" onScroll={handleScroll} style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+                <div className="table-wrapper" onScroll={handleScroll}>
                     <table>
                         <thead>
                             <tr>
                                 {headers.map(header => (
-                                    <th key={header}>
-                                        <div className="th-content">
-                                            <span onClick={() => sortData(header)} style={{ flex: 1 }}>{header}</span>
-                                            {sortConfig.key === header && (
-                                                <span className="sort-icon" onClick={() => sortData(header)}>
-                                                    {sortConfig.direction === 'asc' ? '▲' : '▼'}
-                                                </span>
-                                            )}
+                                    <th key={header} onClick={() => sortData(header)}>
+                                        <div className="th-content" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span>{header}</span>
+                                            <span style={{ color: sortConfig.key === header ? 'var(--primary-color)' : 'transparent', fontSize: '0.65rem' }}>
+                                                {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                                            </span>
                                         </div>
                                     </th>
                                 ))}
