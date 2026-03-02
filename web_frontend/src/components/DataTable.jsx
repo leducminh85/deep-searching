@@ -70,6 +70,27 @@ const DataTable = () => {
         return sortableItems;
     }, [filteredData, sortConfig]);
 
+    // Header translation mapping
+    const headerTranslations = {
+        'title': 'Tiêu đề',
+        'url': 'Liên kết',
+        'link': 'Liên kết',
+        'views': 'Lượt xem',
+        'thumbnail': 'Ảnh thu nhỏ',
+        'caption': 'Phụ đề',
+        'summary': 'Tóm tắt',
+        'date published': 'Ngày đăng',
+        'published': 'Ngày đăng',
+        'channel name': 'Tên kênh',
+        'channel': 'Tên kênh'
+    };
+
+    const getTranslation = (header) => {
+        if (!header) return header;
+        const normalized = header.toLowerCase().trim();
+        return headerTranslations[normalized] || header;
+    };
+
     const headers = useMemo(() => {
         if (data.length === 0) return [];
         return Object.keys(data[0]).filter(h => h && !h.startsWith('__EMPTY') && !h.startsWith('Unnamed'));
@@ -181,6 +202,24 @@ const DataTable = () => {
             );
         }
 
+        if (lowerHeader === 'views' || header === 'Lượt xem') {
+            return new Intl.NumberFormat('vi-VN').format(value || 0);
+        }
+
+        if (lowerHeader === 'date published' || header === 'Ngày đăng') {
+            try {
+                const date = new Date(value);
+                if (isNaN(date.getTime())) return value;
+                return date.toLocaleDateString('vi-VN', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+            } catch (e) {
+                return value;
+            }
+        }
+
         return value;
     };
 
@@ -230,7 +269,9 @@ const DataTable = () => {
                                             style={columnWidths[header] ? { width: `${columnWidths[header]}px`, minWidth: 'auto', maxWidth: 'none' } : {}}
                                         >
                                             <div className="th-content" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                <span onClick={() => sortData(header)} style={{ cursor: 'pointer', flex: 1 }}>{header}</span>
+                                                <span onClick={() => sortData(header)} style={{ cursor: 'pointer', flex: 1 }}>
+                                                    {getTranslation(header)}
+                                                </span>
                                                 <span style={{ color: sortConfig.key === header ? 'var(--primary-color)' : 'transparent', fontSize: '0.65rem' }}>
                                                     {sortConfig.direction === 'asc' ? '▲' : '▼'}
                                                 </span>

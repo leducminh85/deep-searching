@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 :root {
+  /* Dark Theme (Default) */
   --bg-color: #0f172a;
   --text-color: #f8fafc;
   --text-muted: #94a3b8;
@@ -12,15 +13,36 @@
   --focus-ring: rgba(99, 102, 241, 0.4);
   --glass-bg: rgba(30, 41, 59, 0.5);
   --glass-border: rgba(255, 255, 255, 0.1);
+  --table-th-bg: rgba(15, 23, 42, 0.4);
+  --toolbar-bg: rgba(15, 23, 42, 0.3);
+  --input-bg: rgba(15, 23, 42, 0.5);
+}
+
+[data-theme='light'] {
+  --bg-color: #f8fafc;
+  --text-color: #1e293b;
+  --text-muted: #64748b;
+  --border-color: rgba(0, 0, 0, 0.1);
+  --primary-color: #4f46e5;
+  --primary-hover: #4338ca;
+  --accent-color: #e11d48;
+  --surface-color: #ffffff;
+  --focus-ring: rgba(79, 70, 229, 0.2);
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(0, 0, 0, 0.05);
+  --table-th-bg: #f1f5f9;
+  --toolbar-bg: #f8fafc;
+  --input-bg: #ffffff;
 }
 
 body {
   margin: 0;
   font-family: 'Plus Jakarta Sans', sans-serif;
-  background: radial-gradient(circle at top right, #1e293b, #0f172a);
+  background: var(--bg-color);
   color: var(--text-color);
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 * {
@@ -78,16 +100,16 @@ h1 {
   display: flex;
   gap: 1.5rem;
   align-items: center;
-  background: rgba(15, 23, 42, 0.3);
+  background: var(--toolbar-bg);
 }
 
 input.search-input {
   flex: 1;
   padding: 0.75rem 1.25rem;
-  background: rgba(15, 23, 42, 0.5);
+  background: var(--input-bg);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
-  color: white;
+  color: var(--text-color);
   font-size: 0.9375rem;
   outline: none;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -122,7 +144,7 @@ table {
 }
 
 th {
-  background: rgba(15, 23, 42, 0.4);
+  background: var(--table-th-bg);
   padding: 1rem 1.5rem;
   font-weight: 600;
   color: var(--text-muted);
@@ -205,11 +227,11 @@ tr:last-child td {
 
 .form-group input {
   width: 100%;
-  background: rgba(15, 23, 42, 0.5);
+  background: var(--input-bg);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
   padding: 0.75rem 1rem;
-  color: white;
+  color: var(--text-color);
   transition: all 0.2s;
 }
 
@@ -313,6 +335,27 @@ th {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Dark Mode Toggle Button class */
+.theme-toggle {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  color: var(--text-color);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-right: 1rem;
+}
+
+.theme-toggle:hover {
+  background: var(--primary-color);
+  color: white;
 }
 
 .empty-state {
