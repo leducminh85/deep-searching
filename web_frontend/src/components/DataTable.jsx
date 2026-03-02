@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Youtube } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Youtube, ArrowUp } from 'lucide-react';
 
 const DataTable = () => {
     const [data, setData] = useState([]);
@@ -8,6 +8,11 @@ const DataTable = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
     const [visibleRows, setVisibleRows] = useState(30);
+    const [showScrollTop, setShowScrollTop] = useState(false);
+
+    // Column resizing state
+    const [columnWidths, setColumnWidths] = useState({});
+    const resizingRef = useRef(null);
 
     const fetchData = async () => {
         setLoading(true);
@@ -24,10 +29,6 @@ const DataTable = () => {
             setLoading(false);
         }
     };
-
-    useEffect(() => {
-        fetchData();
-    }, []);
 
     const sortData = (key) => {
         let direction = 'asc';
@@ -69,6 +70,34 @@ const DataTable = () => {
         return sortableItems;
     }, [filteredData, sortConfig]);
 
+    const headers = useMemo(() => {
+        if (data.length === 0) return [];
+        return Object.keys(data[0]).filter(h => h && !h.startsWith('__EMPTY') && !h.startsWith('Unnamed'));
+    }, [data]);
+
+    useEffect(() => {
+        fetchData();
+
+        const handleGlobalScroll = () => {
+            setShowScrollTop(window.scrollY > 400);
+        };
+        window.addEventListener('scroll', handleGlobalScroll);
+        return () => window.removeEventListener('scroll', handleGlobalScroll);
+    }, []);
+
+    // Infinite scroll effect
+    useEffect(() => {
+        const handleAutoLoad = () => {
+            if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 800) {
+                if (visibleRows < sortedData.length) {
+                    setVisibleRows(prev => Math.min(prev + 30, sortedData.length));
+                }
+            }
+        };
+        window.addEventListener('scroll', handleAutoLoad);
+        return () => window.removeEventListener('scroll', handleAutoLoad);
+    }, [visibleRows, sortedData.length]);
+
     const handleScroll = (e) => {
         const { scrollTop, clientHeight, scrollHeight } = e.target;
         if (scrollHeight - scrollTop <= clientHeight + 50) {
@@ -78,30 +107,51 @@ const DataTable = () => {
         }
     };
 
+    const scrollToTop = () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    // Resizing logic
+    const startResizing = (header, e) => {
+        e.preventDefault();
+        resizingRef.current = {
+            header,
+            startX: e.clientX,
+            startWidth: e.target.parentElement.offsetWidth
+        };
+
+        document.addEventListener('mousemove', handleResizing);
+        document.addEventListener('mouseup', stopResizing);
+    };
+
+    const handleResizing = (e) => {
+        if (!resizingRef.current) return;
+        const { header, startX, startWidth } = resizingRef.current;
+        const newWidth = Math.max(50, startWidth + (e.clientX - startX));
+        setColumnWidths(prev => ({ ...prev, [header]: newWidth }));
+    };
+
+    const stopResizing = () => {
+        resizingRef.current = null;
+        document.removeEventListener('mousemove', handleResizing);
+        document.removeEventListener('mouseup', stopResizing);
+    };
+
     const visibleData = sortedData.slice(0, visibleRows);
 
-    // Filter out unusable headers (empty strings or all-null columns)
-    const headers = useMemo(() => {
-        if (data.length === 0) return [];
-        return Object.keys(data[0]).filter(h => h && !h.startsWith('__EMPTY') && !h.startsWith('Unnamed'));
-    }, [data]);
 
-    // Helper to extract YouTube ID
     const getYouTubeID = (url) => {
-        if (!url) return null;
+        if (!url || typeof url !== 'string') return null;
         const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
         const match = url.match(regExp);
         return (match && match[7].length === 11) ? match[7] : null;
     };
 
-    // Helper to render cell value
     const renderCell = (header, value, row) => {
         const lowerHeader = header.toLowerCase();
 
-        // 1. If column is thumbnail or we want to show a thumbnail
         if (lowerHeader === 'thumbnail') {
             let src = value;
-            // If empty, try to get from URL
             if (!src || src === '#') {
                 const videoUrl = row['URL'] || row['url'] || row['Link'];
                 const videoId = getYouTubeID(videoUrl);
@@ -123,7 +173,6 @@ const DataTable = () => {
             return null;
         }
 
-        // 2. If column string is a URL containing http
         if (typeof value === 'string' && value.startsWith('http')) {
             return (
                 <a href={value} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -133,6 +182,13 @@ const DataTable = () => {
         }
 
         return value;
+    };
+
+    const getHeaderClass = (header) => {
+        const low = header.toLowerCase();
+        if (low === 'caption') return 'col-caption';
+        if (low === 'summary') return 'col-summary';
+        return '';
     };
 
     return (
@@ -162,18 +218,23 @@ const DataTable = () => {
             {error && <div className="empty-state" style={{ color: 'var(--accent-color)' }}>Lỗi: {error}</div>}
 
             {!loading && !error && (
-                <div className="table-wrapper" onScroll={handleScroll}>
+                <div className="table-wrapper">
                     <table>
                         <thead>
                             <tr>
                                 {headers.map(header => (
-                                    <th key={header} onClick={() => sortData(header)}>
+                                    <th
+                                        key={header}
+                                        className={getHeaderClass(header)}
+                                        style={columnWidths[header] ? { width: `${columnWidths[header]}px`, minWidth: 'auto', maxWidth: 'none' } : {}}
+                                    >
                                         <div className="th-content" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <span>{header}</span>
+                                            <span onClick={() => sortData(header)} style={{ cursor: 'pointer', flex: 1 }}>{header}</span>
                                             <span style={{ color: sortConfig.key === header ? 'var(--primary-color)' : 'transparent', fontSize: '0.65rem' }}>
                                                 {sortConfig.direction === 'asc' ? '▲' : '▼'}
                                             </span>
                                         </div>
+                                        <div className="resize-handle" onMouseDown={(e) => startResizing(header, e)}></div>
                                     </th>
                                 ))}
                             </tr>
@@ -183,7 +244,7 @@ const DataTable = () => {
                                 visibleData.map((row, index) => (
                                     <tr key={index}>
                                         {headers.map(header => (
-                                            <td key={header}>
+                                            <td key={header} className={getHeaderClass(header)}>
                                                 <div className="scroll-cell">
                                                     {renderCell(header, row[header], row)}
                                                 </div>
@@ -194,7 +255,7 @@ const DataTable = () => {
                             ) : (
                                 <tr>
                                     <td colSpan={headers.length || 1} className="empty-state">
-                                        No data available.
+                                        Không tìm thấy dữ liệu phù hợp.
                                     </td>
                                 </tr>
                             )}
@@ -202,6 +263,14 @@ const DataTable = () => {
                     </table>
                 </div>
             )}
+
+            <button
+                className={`scroll-to-top ${showScrollTop ? 'visible' : ''}`}
+                onClick={scrollToTop}
+                title="Scroll to Top"
+            >
+                <ArrowUp size={24} />
+            </button>
         </div>
     );
 };
