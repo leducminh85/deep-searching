@@ -22,7 +22,7 @@ function App() {
         <header className="header">
           <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <img src="/logo.png" alt="Wevic Logo" style={{ width: '40px', height: '40px', borderRadius: '10px' }} />
-            <h1>Wevic - Cops - Video nguồn</h1>
+            <h1>Tổng hợp video nguồn</h1>
 
           </Link>
 
@@ -31,7 +31,7 @@ function App() {
               {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
             <nav>
-              <Link to="/admin" className="btn" style={{ background: 'transparent', border: '1px solid var(--border-color)', boxShadow: 'none', color: 'var(--text-color)' }}>Admin Panel</Link>
+              {/* <Link to="/admin" className="btn" style={{ background: 'transparent', border: '1px solid var(--border-color)', boxShadow: 'none', color: 'var(--text-color)' }}>Admin Panel</Link> */}
             </nav>
           </div>
         </header>
