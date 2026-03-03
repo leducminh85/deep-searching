@@ -1,13 +1,37 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Youtube, ArrowUp } from 'lucide-react';
 
-const DataTable = () => {
+
+const Highlight = ({ text, search, enabled }) => {
+    if (!enabled || !search || !search.trim()) return <span>{text}</span>;
+
+    // Properly escape search term for regex
+    const escapedSearch = search.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(`(${escapedSearch})`, 'gi');
+    const parts = String(text).split(regex);
+
+    return (
+        <span>
+            {parts.map((part, i) =>
+                part.toLowerCase() === search.toLowerCase() ? (
+                    <mark key={i} className="highlight">{part}</mark>
+                ) : (
+                    part
+                )
+            )}
+        </span>
+    );
+};
+
+const DataTable = ({ highlightEnabled }) => {
+
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [progress, setProgress] = useState(0);
     const [error, setError] = useState(null);
 
     const [searchTerm, setSearchTerm] = useState('');
+    const [inputValue, setInputValue] = useState('');
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
     const [visibleRows, setVisibleRows] = useState(30);
     const [showScrollTop, setShowScrollTop] = useState(false);
@@ -18,6 +42,15 @@ const DataTable = () => {
     // Column resizing state
     const [columnWidths, setColumnWidths] = useState({});
     const resizingRef = useRef(null);
+
+    // Debounce search effect to prevent lag while typing
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setSearchTerm(inputValue);
+        }, 500);
+
+        return () => clearTimeout(handler);
+    }, [inputValue]);
 
     const fetchData = async () => {
         setLoading(true);
@@ -180,6 +213,29 @@ const DataTable = () => {
         return () => window.removeEventListener('scroll', handleGlobalScroll);
     }, []);
 
+    // Auto-scroll to first highlight in each cell when searching
+    useEffect(() => {
+        if (!highlightEnabled || !searchTerm) return;
+
+        // Use requestAnimationFrame or setTimeout to ensure DOM is rendered with new highlights
+        const timer = setTimeout(() => {
+            const cells = document.querySelectorAll('.scroll-cell');
+            cells.forEach(cell => {
+                const firstHighlight = cell.querySelector('.highlight');
+                if (firstHighlight) {
+                    // Scroll cell container to make highlight visible
+                    // We scroll to slightly above the highlight (15px) for better visibility
+                    cell.scrollTo({
+                        top: firstHighlight.offsetTop - 15,
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        }, 100);
+
+        return () => clearTimeout(timer);
+    }, [searchTerm, visibleRows, highlightEnabled]);
+
     // Infinite scroll effect
     useEffect(() => {
         const handleAutoLoad = () => {
@@ -294,7 +350,7 @@ const DataTable = () => {
             }
         }
 
-        return value;
+        return <Highlight text={value} search={searchTerm} enabled={highlightEnabled} />;
     };
 
     const getHeaderClass = (header) => {
@@ -308,13 +364,53 @@ const DataTable = () => {
         <>
             <div className="table-container">
                 <div className="toolbar">
-                    <input
-                        type="text"
-                        className="search-input"
-                        placeholder="Tìm kiếm nhanh trong toàn bộ các cột..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
+                    <div className="search-wrapper" style={{ flex: 1, position: 'relative' }}>
+                        {highlightEnabled && inputValue && (
+                            <div className="search-highlight-mirror" style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                padding: '0 1.25rem', // Matches search-input padding
+                                pointerEvents: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                zIndex: 1
+                            }}>
+                                <span style={{
+                                    backgroundColor: '#facc15',
+                                    color: 'transparent', // Don't show text, only background
+                                    padding: '0.125rem 0.5rem',
+                                    margin: '0 -0.5rem',
+                                    borderRadius: '6px',
+                                    fontSize: '0.9375rem',
+                                    fontWeight: '700',
+                                    whiteSpace: 'pre',
+                                    fontFamily: 'inherit',
+                                    display: 'inline-block'
+                                }}>
+                                    {inputValue}
+                                </span>
+                            </div>
+                        )}
+                        <input
+                            type="text"
+                            className="search-input"
+                            placeholder="Tìm kiếm nhanh trong toàn bộ các cột..."
+                            value={inputValue}
+                            onChange={(e) => setInputValue(e.target.value)}
+                            style={{
+                                width: '100%',
+                                position: 'relative',
+                                zIndex: 2,
+                                background: 'transparent',
+                                color: (highlightEnabled && inputValue) ? '#000' : 'var(--text-color)',
+                                caretColor: (highlightEnabled && inputValue) ? '#000' : 'var(--text-color)',
+                                opacity: 1 // Ensure cursor is visible
+                            }}
+                        />
+                    </div>
                     <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
                         {searchTerm
                             ? `Tìm thấy ${filteredData.length} / ${data.length}`

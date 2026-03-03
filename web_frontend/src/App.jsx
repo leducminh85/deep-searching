@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Highlighter } from 'lucide-react';
 import DataTable from './components/DataTable';
 import AdminPage from './components/AdminPage';
 
 function App() {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
+  const [highlightEnabled, setHighlightEnabled] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -27,6 +28,18 @@ function App() {
           </Link>
 
           <div style={{ display: 'flex', alignItems: 'center' }}>
+            <button
+              className="theme-toggle"
+              onClick={() => setHighlightEnabled(!highlightEnabled)}
+              title={highlightEnabled ? "Tắt Highlight" : "Bật Highlight"}
+              style={{
+                marginRight: '0.5rem',
+                color: highlightEnabled ? 'var(--primary-color)' : 'inherit',
+                borderColor: highlightEnabled ? 'var(--primary-color)' : 'var(--glass-border)'
+              }}
+            >
+              <Highlighter size={20} />
+            </button>
             <button className="theme-toggle" onClick={toggleTheme} title="Đổi giao diện">
               {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
@@ -38,7 +51,7 @@ function App() {
 
         <main>
           <Routes>
-            <Route path="/" element={<DataTable />} />
+            <Route path="/" element={<DataTable highlightEnabled={highlightEnabled} />} />
             <Route path="/admin" element={<AdminPage />} />
           </Routes>
         </main>
