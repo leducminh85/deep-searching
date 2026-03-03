@@ -2,6 +2,7 @@ fastapi
 uvicorn
 pandas
 openpyxl
+python-calamine
 python-multipart
 python-dotenv
 supabase

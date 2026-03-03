@@ -1,25 +1,17 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 import pandas as pd
 import os
 import shutil
+import json
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import tempfile
+from contextlib import asynccontextmanager
 
 # Load environment variables
 load_dotenv()
-
-app = FastAPI()
-
-# Enable CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Supabase configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -36,6 +28,10 @@ if SUPABASE_URL and SUPABASE_KEY:
 # except for the /tmp directory.
 DATA_FILE_NAME = "data.xlsx"
 LOCAL_DATA_PATH = os.path.join(tempfile.gettempdir(), DATA_FILE_NAME)
+
+# Global cache for data
+_cached_data = None
+JSON_CACHE_PATH = os.path.join(tempfile.gettempdir(), "data_cache.json")
 
 async def sync_from_cloud():
     """Download data.xlsx from Supabase to local temporary storage."""
@@ -74,44 +70,102 @@ async def sync_to_cloud():
         print(f"❌ Error uploading to cloud: {e}")
         return False
 
-@app.get("/api/data")
-async def get_data():
-    # Attempt to sync from cloud if local file is missing (Vercel cold start)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Pre-load data
+    print("🚀 App starting... Pre-loading data into cache.")
+    try:
+        await get_data_internal()
+        print("✅ Data pre-loaded successfully.")
+    except Exception as e:
+        print(f"⚠️ Failed to pre-load data: {e}")
+    yield
+    # Shutdown: Clean up if needed
+    print("👋 App shutting down.")
+
+app = FastAPI(lifespan=lifespan)
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Enable GZip compression
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+async def get_data_internal():
+    """Internal function to load and cache data."""
+    global _cached_data
+    
+    # 1. Return memory cache if available
+    if _cached_data is not None:
+        return _cached_data
+
+    # 2. Try loading from disk JSON cache (much faster than Excel)
+    if os.path.exists(JSON_CACHE_PATH):
+        try:
+            with open(JSON_CACHE_PATH, "r", encoding="utf-8") as f:
+                _cached_data = json.load(f)
+                return _cached_data
+        except Exception as e:
+            print(f"⚠️ Disk cache load failed: {e}")
+
+    # 3. If no cache, perform full load from Excel
     if not os.path.exists(LOCAL_DATA_PATH):
         await sync_from_cloud()
 
     if not os.path.exists(LOCAL_DATA_PATH):
-        # Fallback to a local file if it exists in the app package during first deploy
+        # Fallback to a local file if it exists in the app package
         pkg_data_path = os.path.join(os.path.dirname(__file__), DATA_FILE_NAME)
         if os.path.exists(pkg_data_path):
             shutil.copy(pkg_data_path, LOCAL_DATA_PATH)
         else:
-            return {"data": []}
+            return []
     
     try:
+        # Optimization: Use calamine engine (much faster than openpyxl)
         try:
-            df = pd.read_excel(LOCAL_DATA_PATH, sheet_name="NEW_CACHE_DATA_HIDDEN_", engine="openpyxl")
-        except ValueError:
-            df = pd.read_excel(LOCAL_DATA_PATH, engine="openpyxl")
+            df = pd.read_excel(LOCAL_DATA_PATH, sheet_name="NEW_CACHE_DATA_HIDDEN_", engine="calamine")
+        except Exception:
+            try:
+                df = pd.read_excel(LOCAL_DATA_PATH, engine="calamine")
+            except Exception:
+                # Fallback to openpyxl if calamine is not available
+                df = pd.read_excel(LOCAL_DATA_PATH, engine="openpyxl")
+
             
         df = df.fillna("")
-        
-        # Remove empty or Unnamed columns
         cols_to_keep = [col for col in df.columns if not str(col).startswith("Unnamed")]
         df = df[cols_to_keep]
-        
-        # Filter rows with data, keeping Thumbnail column
         df = df.loc[:, (df != "").any(axis=0) | (df.columns == "Thumbnail")]
         
         records = df.to_dict(orient="records")
-        
-        # Ensure 'Thumbnail' key exists
         if "Thumbnail" in df.columns:
             for record in records:
-                if "Thumbnail" not in record:
-                    record["Thumbnail"] = ""
+                if "Thumbnail" not in record: record["Thumbnail"] = ""
 
-        return {"data": records}
+        # 4. Save to both caches
+        _cached_data = records
+        try:
+            with open(JSON_CACHE_PATH, "w", encoding="utf-8") as f:
+                json.dump(records, f, ensure_ascii=False)
+        except Exception as e:
+            print(f"⚠️ Failed to save disk cache: {e}")
+
+        return records
+    except Exception as e:
+        print(f"❌ Error loading data: {e}")
+        raise e
+
+@app.get("/api/data")
+async def get_data():
+    try:
+        data = await get_data_internal()
+        return {"data": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -139,8 +193,15 @@ async def upload_file(password: str = Form(...), file: UploadFile = File(...)):
         
         if not success:
              return {"message": "File saved locally but cloud sync failed. Changes might be lost on next restart."}
-             
+        
+        # Invalidate caches so next request reloads from new file
+        global _cached_data
+        _cached_data = None
+        if os.path.exists(JSON_CACHE_PATH):
+            os.remove(JSON_CACHE_PATH)
+
         return {"message": "File uploaded and synced to cloud storage successfully"}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
