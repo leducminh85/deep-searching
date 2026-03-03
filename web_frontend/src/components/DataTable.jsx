@@ -24,15 +24,26 @@ const DataTable = () => {
         setError(null);
         setProgress(0);
 
-        // Start a simulation timer immediately for the "waiting for server" phase
-        // This makes progress start crawling from 0% the moment the button is clicked/page loads
+        // Simulation for the "waiting/loading" phase
+        // Targets a random point between 60-80% over approximately 20 seconds
+        const targetPercent = Math.floor(Math.random() * 21) + 60;
+        const duration = 20000; // 20 seconds
+        const startTime = Date.now();
+
         const simTimer = setInterval(() => {
+            const elapsed = Date.now() - startTime;
+            const calculatedProgress = Math.floor((elapsed / duration) * targetPercent);
+
             setProgress(prev => {
-                if (prev < 20) return prev + 1; // Crawl to 20% slowly
-                clearInterval(simTimer);
+                if (calculatedProgress > prev && prev < targetPercent) {
+                    return calculatedProgress;
+                }
                 return prev;
             });
-        }, 300);
+
+            if (elapsed >= duration) clearInterval(simTimer);
+        }, 500);
+
 
         try {
             const response = await fetch(`${API_BASE}/api/data`);
