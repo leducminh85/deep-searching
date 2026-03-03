@@ -23,8 +23,21 @@ const DataTable = () => {
         setLoading(true);
         setError(null);
         setProgress(0);
+
+        // Start a simulation timer immediately for the "waiting for server" phase
+        // This makes progress start crawling from 0% the moment the button is clicked/page loads
+        const simTimer = setInterval(() => {
+            setProgress(prev => {
+                if (prev < 20) return prev + 1; // Crawl to 20% slowly
+                clearInterval(simTimer);
+                return prev;
+            });
+        }, 300);
+
         try {
             const response = await fetch(`${API_BASE}/api/data`);
+            clearInterval(simTimer); // Stop simulation once server starts responding
+
             if (!response.ok) throw new Error('Failed to fetch data from server');
 
             // Track download progress
@@ -34,6 +47,9 @@ const DataTable = () => {
             let receivedLength = 0;
             let chunks = [];
 
+            // Jump to at least 25% now that we have the first byte
+            setProgress(prev => Math.max(prev, 25));
+
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
@@ -42,13 +58,15 @@ const DataTable = () => {
                 receivedLength += value.length;
 
                 if (contentLength) {
-                    setProgress(Math.round((receivedLength / contentLength) * 100));
+                    const actualProgress = Math.round((receivedLength / contentLength) * 100);
+                    // Ensure progress only moves forward and factors in the initial offset
+                    setProgress(Math.max(25, actualProgress));
                 } else {
-                    // Fallback progress for chunked transfer or unknown size
-                    // Simulate progress up to 95%
-                    setProgress(prev => Math.min(prev + 5, 95));
+                    // Simulation for chunked or unknown size (Gzip often hides size)
+                    setProgress(prev => Math.min(prev + 2, 98));
                 }
             }
+
 
             // Concatenate chunks
             let chunksAll = new Uint8Array(receivedLength);
