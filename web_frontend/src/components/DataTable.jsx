@@ -68,14 +68,15 @@ const DataTable = () => {
                 chunks.push(value);
                 receivedLength += value.length;
 
-                if (contentLength) {
-                    const actualProgress = Math.round((receivedLength / contentLength) * 100);
-                    // Crucial: Use prev state to ensure we never jump BACKWARDS
-                    setProgress(prev => Math.max(prev, actualProgress));
+                if (contentLength && contentLength > 0) {
+                    let actualProgress = Math.round((receivedLength / contentLength) * 100);
+                    // Clamp to 100% to avoid exceeding due to Gzip decompression mismatches
+                    setProgress(prev => Math.min(Math.max(prev, actualProgress), 100));
                 } else {
                     // Simulation for chunked or unknown size
                     setProgress(prev => Math.min(prev + 1, 99));
                 }
+
             }
 
 
