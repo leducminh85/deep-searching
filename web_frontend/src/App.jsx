@@ -20,9 +20,11 @@ function App() {
     <Router>
       <div className="container">
         <header className="header">
-          <Link to="/" style={{ textDecoration: 'none' }}>
-            <h1>Video cops nguồn</h1>
+          <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <img src="/logo.png" alt="Wevic Logo" style={{ width: '40px', height: '40px', borderRadius: '10px' }} />
+            <h1>Wevic - Cops Video</h1>
           </Link>
+
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <button className="theme-toggle" onClick={toggleTheme} title="Đổi giao diện">
               {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
