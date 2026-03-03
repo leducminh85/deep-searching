@@ -4,7 +4,9 @@ import { Youtube, ArrowUp } from 'lucide-react';
 const DataTable = () => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [progress, setProgress] = useState(0);
     const [error, setError] = useState(null);
+
     const [searchTerm, setSearchTerm] = useState('');
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
     const [visibleRows, setVisibleRows] = useState(30);
@@ -20,18 +22,57 @@ const DataTable = () => {
     const fetchData = async () => {
         setLoading(true);
         setError(null);
+        setProgress(0);
         try {
             const response = await fetch(`${API_BASE}/api/data`);
             if (!response.ok) throw new Error('Failed to fetch data from server');
-            const result = await response.json();
+
+            // Track download progress
+            const reader = response.body.getReader();
+            const contentLength = +response.headers.get('Content-Length');
+
+            let receivedLength = 0;
+            let chunks = [];
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                chunks.push(value);
+                receivedLength += value.length;
+
+                if (contentLength) {
+                    setProgress(Math.round((receivedLength / contentLength) * 100));
+                } else {
+                    // Fallback progress for chunked transfer or unknown size
+                    // Simulate progress up to 95%
+                    setProgress(prev => Math.min(prev + 5, 95));
+                }
+            }
+
+            // Concatenate chunks
+            let chunksAll = new Uint8Array(receivedLength);
+            let position = 0;
+            for (let chunk of chunks) {
+                chunksAll.set(chunk, position);
+                position += chunk.length;
+            }
+
+            // Decode and parse
+            const text = new TextDecoder("utf-8").decode(chunksAll);
+            const result = JSON.parse(text);
+
             setData(result.data || []);
+            setProgress(100);
             setVisibleRows(30);
         } catch (err) {
             setError(`${err.message} (URL: ${API_BASE || 'chưa có API_BASE'}/api/data)`);
         } finally {
-            setLoading(false);
+            // Delay closing the loader slightly to let user see 100%
+            setTimeout(() => setLoading(false), 200);
         }
     };
+
 
     const sortData = (key) => {
         let direction = 'asc';
@@ -254,10 +295,16 @@ const DataTable = () => {
 
                 {loading && (
                     <div className="empty-state">
-                        <div className="loader" style={{ margin: '0 auto 1.5rem' }}></div>
-                        <p>Đang tải dữ liệu từ Excel...</p>
+                        <span className="progress-label">{progress}%</span>
+                        <div className="progress-container">
+                            <div className="progress-bar" style={{ width: `${progress}%` }}></div>
+                        </div>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                            Đang tải toàn bộ thư viện video...
+                        </p>
                     </div>
                 )}
+
                 {error && <div className="empty-state" style={{ color: 'var(--accent-color)' }}>Lỗi: {error}</div>}
 
                 {!loading && !error && (
