@@ -58,7 +58,7 @@ const DataTable = () => {
             let receivedLength = 0;
             let chunks = [];
 
-            // Jump to at least 25% now that we have the first byte
+            // Ensure progress doesn't jump back if simulation was further along
             setProgress(prev => Math.max(prev, 25));
 
             while (true) {
@@ -70,11 +70,11 @@ const DataTable = () => {
 
                 if (contentLength) {
                     const actualProgress = Math.round((receivedLength / contentLength) * 100);
-                    // Ensure progress only moves forward and factors in the initial offset
-                    setProgress(Math.max(25, actualProgress));
+                    // Crucial: Use prev state to ensure we never jump BACKWARDS
+                    setProgress(prev => Math.max(prev, actualProgress));
                 } else {
-                    // Simulation for chunked or unknown size (Gzip often hides size)
-                    setProgress(prev => Math.min(prev + 2, 98));
+                    // Simulation for chunked or unknown size
+                    setProgress(prev => Math.min(prev + 1, 99));
                 }
             }
 
