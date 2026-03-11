@@ -8,13 +8,16 @@ import openpyxl
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 import re
 import ollama
+import os
+import json
 
 # --- CẤU HÌNH CƠ BẢN ---
 FILE_PATH = "data.xlsx"   
 SHEET_NAME = "NEW_CACHE_DATA_HIDDEN_"
-MAX_WORKERS = 1      # QUAN TRỌNG: Đã đổi thành 1 luồng để tránh tràn VRAM khi AI đọc đoạn text dài
+MAX_WORKERS = 2      # QUAN TRỌNG: Đã đổi thành 1 luồng để tránh tràn VRAM khi AI đọc đoạn text dài
 SAVE_EVERY = 2        
-MAX_TEST_VIDEOS = 500  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
+MAX_TEST_VIDEOS = 1000  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
+COOKIES_FILE = "cookies.txt"  # File cookies từ trình duyệt để YouTube không chặn
 
 # Biến toàn cục
 stop_flag = False
@@ -23,6 +26,7 @@ save_lock = threading.Lock()
 success_count = 0
 wb = None
 ws = None
+
 def clean_for_excel(text):
     """Tẩy rửa triệt để các ký tự rác làm hỏng cấu trúc XML của Excel"""
     if not isinstance(text, str):
@@ -38,13 +42,17 @@ def clean_for_excel(text):
     return text[:32000]
 
 def fetch_caption(video_url, row_idx):
-    """Lấy caption dùng yt-dlp, xử lý triệt để lỗi Format Video"""
+    """Lấy caption dùng yt-dlp + Cookies, xử lý triệt để lỗi"""
     ydl_opts = {
             'skip_download': True,
             'quiet': True,
             'no_warnings': True,
             'ignore_no_formats_error': True,
         }
+    
+    # Tích hợp cookies để YouTube không yêu cầu xác minh bot
+    if os.path.exists(COOKIES_FILE):
+        ydl_opts['cookiefile'] = COOKIES_FILE
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -59,10 +67,12 @@ def fetch_caption(video_url, row_idx):
         
         sub_url = None
         
-        # 1. Tìm phụ đề thủ công
-        if 'en' in subs:
-            for f in subs['en']:
-                if f.get('ext') == 'json3':
+        # 1. Tìm phụ đề thủ công (ưu tiên en, en-US, en-GB...)
+        target_langs = [k for k in subs.keys() if k.lower().startswith('en')]
+        if target_langs:
+            preferred = 'en' if 'en' in target_langs else target_langs[0]
+            for f in subs[preferred]:
+                if f.get('ext') in ['json3', 'json']:
                     sub_url = f['url']
                     break
                     
@@ -71,7 +81,7 @@ def fetch_caption(video_url, row_idx):
             for lang in auto_subs.keys():
                 if lang.startswith('en'):  
                     for f in auto_subs[lang]:
-                        if f.get('ext') == 'json3':
+                        if f.get('ext') in ['json3', 'json']:
                             sub_url = f['url']
                             break
                     if sub_url: break
@@ -80,23 +90,19 @@ def fetch_caption(video_url, row_idx):
             print(f"[Dòng {row_idx}] ⚠️ Lỗi: Video KHÔNG CÓ phụ đề tiếng Anh.")
             return None
             
-        # 3. Tải và xử lý file phụ đề
+        # 3. Tải và xử lý file phụ đề (dùng yt-dlp urlopen để gửi cookies tự động)
         try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-            response = requests.get(sub_url, headers=headers)
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl2:
+                sub_data = ydl2.urlopen(sub_url).read().decode('utf-8')
             
-            if response.status_code != 200:
-                print(f"[Dòng {row_idx}] ❌ Lỗi: YouTube từ chối cho tải file phụ đề (Mã lỗi {response.status_code}).")
-                if response.status_code == 429:
-                    return "IP_BLOCKED"
-                return None
-                
-            res = response.json()
+            res = json.loads(sub_data)
             
-        except requests.exceptions.JSONDecodeError:
-            print(f"[Dòng {row_idx}] ❌ Lỗi cấu trúc: YouTube trả về dữ liệu rỗng hoặc sai định dạng.")
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "Too Many Requests" in err_str:
+                print(f"[Dòng {row_idx}] ⛔ IP bị YouTube chặn (429).")
+                return "IP_BLOCKED"
+            print(f"[Dòng {row_idx}] ❌ Lỗi tải phụ đề: {err_str[:80]}")
             return None
             
         text_chunks = []
@@ -118,7 +124,7 @@ def fetch_caption(video_url, row_idx):
         elif "too many requests" in error_msg or "http error 429" in error_msg:
             return "IP_BLOCKED"
         elif "sign in" in error_msg or "age" in error_msg or "bot" in error_msg:
-            print(f"[Dòng {row_idx}] ❌ Lỗi: Video giới hạn độ tuổi, Cookie hết hạn hoặc bắt xác minh danh tính.")
+            print(f"[Dòng {row_idx}] ❌ Lỗi: Video giới hạn độ tuổi hoặc bắt xác minh. Kiểm tra lại cookies.txt!")
         else:
             print(f"[Dòng {row_idx}] ❌ Lỗi yt-dlp: {str(e).splitlines()[0][:80]}")
         return None
@@ -166,7 +172,7 @@ def process_row(row_idx, url, existing_caption, existing_summary):
     if stop_flag:
         return row_idx, "ABORTED", "ABORTED"
     
-    # Nghỉ dài hơn chút để chống lỗi 429 từ YouTube
+    # Nghỉ ngẫu nhiên để chống lỗi 429 từ YouTube
     time.sleep(random.uniform(3, 7))
     
     print(f"\n▶ Đang xử lý dòng {row_idx}...")
@@ -202,6 +208,12 @@ def process_row(row_idx, url, existing_caption, existing_summary):
 
 def main():
     global success_count, stop_flag, wb, ws  
+    
+    # Kiểm tra cookies
+    if os.path.exists(COOKIES_FILE):
+        print(f"✅ Đã tìm thấy file cookies: {COOKIES_FILE}")
+    else:
+        print(f"⚠️ Cảnh báo: Không tìm thấy {COOKIES_FILE}. Có thể bị YouTube chặn!")
     
     print(f"Đang đọc dữ liệu từ {FILE_PATH}...")
     try:
@@ -263,7 +275,7 @@ def main():
         print("Mọi video đều đã có đầy đủ dữ liệu! Hoàn thành.")
         return
 
-    print(f"Bắt đầu chạy với {MAX_WORKERS} luồng...\n")
+    print(f"Bắt đầu chạy với {MAX_WORKERS} luồng (SỬ DỤNG COOKIES)...\n")
     
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
