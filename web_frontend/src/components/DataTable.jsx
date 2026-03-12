@@ -81,7 +81,7 @@ const DataTable = ({ highlightEnabled }) => {
         setError(null);
 
         try {
-            const sortParam = sort.key || 'Created At';
+            const sortParam = sort.key || 'created_at';
             const orderParam = sort.direction;
             const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}&sort=${encodeURIComponent(sortParam)}&order=${orderParam}`;
             const response = await fetch(url);

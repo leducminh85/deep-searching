@@ -45,30 +45,38 @@ app.add_middleware(
 # Enable GZip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-async def get_data_internal(query: str = None, page: int = 1, page_size: int = 500, sort_by: str = "created_at", sort_order: str = "desc"):
+async def get_data_internal(query: str = None, page: int = 1, page_size: int = 200, sort_by: str = "Created At", sort_order: str = "desc"):
     """Lấy dữ liệu từ Database, hỗ trợ tìm kiếm, phân trang và sắp xếp server-side."""
     global _cached_data
     
-    # Map tên cột từ Frontend sang Database
+    # Map tên cột từ Frontend sang Database (chấp nhận nhiều định dạng)
     column_map = {
-        "Title": "title",
-        "Views": "views",
-        "Date Published": "date_published",
-        "Channel Name": "channel_name",
-        "Created At": "created_at",
-        "Thumbnail": "thumbnail",
-        "Caption": "caption",
-        "Summary": "summary"
+        "title": "title",
+        "url": "url",
+        "link": "url",
+        "views": "views",
+        "date_published": "date_published",
+        "date published": "date_published",
+        "channel_name": "channel_name",
+        "channel name": "channel_name",
+        "created_at": "created_at",
+        "created at": "created_at",
+        "thumbnail": "thumbnail",
+        "caption": "caption",
+        "summary": "summary"
     }
-    db_sort_column = column_map.get(sort_by, "created_at")
-    is_descending = (sort_order.lower() == "desc")
+    
+    # Chuẩn hóa key đầu vào
+    normalized_sort = str(sort_by).lower().strip()
+    db_sort_column = column_map.get(normalized_sort, "created_at")
+    is_descending = (str(sort_order).lower() == "desc")
 
     # Tính toán vị trí bắt đầu và kết thúc (0-indexed)
     start = (page - 1) * page_size
     end = start + page_size - 1
 
-    # RAM Cache tối thiểu để tránh tốn memory
-    if not query and page == 1 and sort_by == "created_at" and sort_order == "desc" and _cached_data is not None:
+    # RAM Cache tối thiểu cho trang chủ mặc định
+    if not query and page == 1 and db_sort_column == "created_at" and is_descending and _cached_data is not None:
         return _cached_data
 
     if not supabase:
@@ -76,8 +84,8 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 5
         return [], 0
     
     try:
-        # Tối ưu: Chỉ lấy các cột cần thiết để giảm payload và RAM
-        builder = supabase.table("videos").select("title,url,channel_name,views,date_published,thumbnail,caption,summary", count="exact")
+        # Lấy các cột cần thiết, bao gồm cả created_at để sort nếu cần
+        builder = supabase.table("videos").select("title,url,channel_name,views,date_published,thumbnail,caption,summary,created_at", count="exact")
         
         if query:
             search_str = f"%{query}%"
@@ -87,7 +95,7 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 5
         response = builder.order(db_sort_column, desc=is_descending).range(start, end).execute()
         
         records = response.data if response.data else []
-        total_count = response.count if response.count is not None else len(records)
+        total_count = response.count if response.count is not None else 0
         
         # Format lại data sang key chuẩn cho Frontend
         formatted_records = []
@@ -103,8 +111,8 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 5
                 "Summary": r.get("summary", "")
             })
 
-        # Chỉ cache kết quả trang đầu mặc định
-        if not query and page == 1 and sort_by == "created_at" and sort_order == "desc":
+        # Cache kết quả trang đầu mặc định
+        if not query and page == 1 and db_sort_column == "created_at" and is_descending:
             _cached_data = (formatted_records, total_count)
             
         return formatted_records, total_count
