@@ -164,9 +164,20 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 5
         return [], 0
 
 @app.get("/api/data")
-async def get_data(q: str = None, page: int = 1, size: int = 500, sort: str = "Created At", order: str = "desc"):
+async def get_data(q: str = None, page: int = 1, size: int = 500, sort: str = "created_at", order: str = "desc"):
     try:
-        data, total = await get_data_internal(q, page, size, sort, order)
+        # Chuẩn hóa tên cột sắp xếp từ Frontend hoặc dùng mặc định
+        column_map = {
+            "Title": "title",
+            "Views": "views",
+            "Date Published": "date_published",
+            "Channel Name": "channel_name",
+            "Created At": "created_at",
+            "created_at": "created_at"
+        }
+        db_sort_column = column_map.get(sort, "created_at")
+        
+        data, total = await get_data_internal(q, page, size, db_sort_column, order)
         return {
             "data": data,
             "total": total,
@@ -174,6 +185,7 @@ async def get_data(q: str = None, page: int = 1, size: int = 500, sort: str = "C
             "page_size": size
         }
     except Exception as e:
+        print(f"❌ Lỗi API /api/data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/verify")
