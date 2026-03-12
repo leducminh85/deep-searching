@@ -6,7 +6,7 @@ import AdminPage from './components/AdminPage';
 
 function App() {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
-  const [highlightEnabled, setHighlightEnabled] = useState(false);
+  const [highlightEnabled, setHighlightEnabled] = useState(true);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -44,7 +44,7 @@ function App() {
               {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
             <nav>
-               <Link to="/admin" className="btn" style={{ background: 'transparent', border: '1px solid var(--border-color)', boxShadow: 'none', color: 'var(--text-color)' }}>Admin Panel</Link> 
+              <Link to="/admin" className="btn" style={{ background: 'transparent', border: '1px solid var(--border-color)', boxShadow: 'none', color: 'var(--text-color)' }}>Admin Panel</Link>
             </nav>
           </div>
         </header>

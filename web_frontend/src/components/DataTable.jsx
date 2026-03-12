@@ -203,26 +203,25 @@ const DataTable = ({ highlightEnabled }) => {
 
     // Auto-scroll to first highlight in each cell when searching
     useEffect(() => {
-        if (!highlightEnabled || !searchTerm) return;
+        if (!highlightEnabled || !searchTerm || loading) return;
 
-        // Use requestAnimationFrame or setTimeout to ensure DOM is rendered with new highlights
+        // Use requestAnimationFrame and a slightly longer timeout to ensure DOM is fully rendered and browsers have calculated offsets
         const timer = setTimeout(() => {
             const cells = document.querySelectorAll('.scroll-cell');
             cells.forEach(cell => {
                 const firstHighlight = cell.querySelector('.highlight');
                 if (firstHighlight) {
-                    // Scroll cell container to make highlight visible
-                    // We scroll to slightly above the highlight (15px) for better visibility
+                    // OffsetTop relative to positioned parent (.scroll-cell itself)
                     cell.scrollTo({
                         top: firstHighlight.offsetTop - 15,
                         behavior: 'smooth'
                     });
                 }
             });
-        }, 100);
+        }, 300);
 
         return () => clearTimeout(timer);
-    }, [searchTerm, visibleRows, highlightEnabled]);
+    }, [searchTerm, visibleRows, highlightEnabled, loading, data]);
 
     // Infinite scroll effect
     useEffect(() => {
@@ -441,8 +440,8 @@ const DataTable = ({ highlightEnabled }) => {
                     </div>
                     <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
                         {searchTerm
-                            ? `Tìm thấy ${totalResults} kết quả (đã tải ${data.length})`
-                            : `Tổng cộng ${totalResults} video (đã tải ${data.length})`
+                            ? `Tìm thấy ${totalResults.toLocaleString()} kết quả`
+                            : `Tổng cộng ${totalResults.toLocaleString()} video`
                         }
                     </span>
                 </div>
