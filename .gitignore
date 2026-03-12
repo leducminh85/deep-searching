@@ -57,11 +57,9 @@ Thumbs.db
 *.log
 *.sqlite3
 *.db
+*.xlsx
+*.json
 ~$*.xlsx
-# Optional: uncomment if you don't want to track large Excel files
-# *.xlsx
-# *copy*.xlsx
-# data\ result\ *.xlsx
 
 # Secrets and Proxies
 cookies.txt

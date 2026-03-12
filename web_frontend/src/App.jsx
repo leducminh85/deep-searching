@@ -23,7 +23,7 @@ function App() {
         <header className="header">
           <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <img src="/logo.png" alt="Wevic Logo" style={{ width: '40px', height: '40px', borderRadius: '10px' }} />
-            <h1>Tổng hợp video nguồn</h1>
+            <h1>Deep Video Search</h1>
 
           </Link>
 
@@ -43,9 +43,9 @@ function App() {
             <button className="theme-toggle" onClick={toggleTheme} title="Đổi giao diện">
               {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
-            <nav>
+            {/* <nav>
               <Link to="/admin" className="btn" style={{ background: 'transparent', border: '1px solid var(--border-color)', boxShadow: 'none', color: 'var(--text-color)' }}>Admin Panel</Link>
-            </nav>
+            </nav> */}
           </div>
         </header>
 
