@@ -97,16 +97,27 @@ app.add_middleware(
 # Enable GZip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-async def get_data_internal(query: str = None, page: int = 1, page_size: int = 200):
-    """Lấy dữ liệu từ Database, hỗ trợ tìm kiếm và phân trang."""
+async def get_data_internal(query: str = None, page: int = 1, page_size: int = 500, sort_by: str = "Created At", sort_order: str = "desc"):
+    """Lấy dữ liệu từ Database, hỗ trợ tìm kiếm, phân trang và sắp xếp server-side."""
     global _cached_data
     
+    # Map tên cột từ Frontend sang Database
+    column_map = {
+        "Title": "title",
+        "Views": "views",
+        "Date Published": "date_published",
+        "Channel Name": "channel_name",
+        "Created At": "created_at"
+    }
+    db_sort_column = column_map.get(sort_by, "created_at")
+    is_ascending = (sort_order.lower() == "asc")
+
     # Tính toán vị trí bắt đầu và kết thúc (0-indexed)
     start = (page - 1) * page_size
     end = start + page_size - 1
 
-    # Nếu lấy trang đầu tiên và không có query, thử dùng RAM cache
-    if not query and page == 1 and _cached_data is not None:
+    # Chỉ dùng RAM cache nếu lấy trang đầu, không search và dùng sắp xếp mặc định
+    if not query and page == 1 and sort_by == "Created At" and sort_order == "desc" and _cached_data is not None:
         return _cached_data
 
     if not supabase:
@@ -114,7 +125,7 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 2
         return [], 0
     
     try:
-        print(f"🔍 Truy vấn DB: Trang {page} (Size: {page_size}) | Tìm kiếm: {query if query else 'Tất cả'}")
+        print(f"🔍 Truy vấn DB: Trang {page} | Sort: {db_sort_column} {sort_order}")
         
         # Bắt đầu builder với select count để biết tổng số dòng
         builder = supabase.table("videos").select("*", count="exact")
@@ -123,8 +134,8 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 2
             search_str = f"%{query}%"
             builder = builder.or_(f"title.ilike.{search_str},summary.ilike.{search_str},caption.ilike.{search_str}")
         
-        # Thực hiện truy vấn trong khoảng range của trang hiện tại
-        response = builder.order("created_at", desc=True).range(start, end).execute()
+        # Thực hiện truy vấn với sắp xếp và phân trang
+        response = builder.order(db_sort_column, ascending=is_ascending).range(start, end).execute()
         
         records = response.data if response.data else []
         total_count = response.count if response.count is not None else len(records)
@@ -142,8 +153,8 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 2
                 "Summary": r.get("summary", "")
             })
 
-        # Cache RAM chỉ cho trang đầu mặc định (lưu dạng tuple)
-        if not query and page == 1:
+        # Cache RAM chỉ cho trạng thái mặc định
+        if not query and page == 1 and sort_by == "Created At" and sort_order == "desc":
             _cached_data = (formatted_records, total_count)
             
         return formatted_records, total_count
@@ -153,9 +164,9 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 2
         return [], 0
 
 @app.get("/api/data")
-async def get_data(q: str = None, page: int = 1, size: int = 200):
+async def get_data(q: str = None, page: int = 1, size: int = 500, sort: str = "Created At", order: str = "desc"):
     try:
-        data, total = await get_data_internal(q, page, size)
+        data, total = await get_data_internal(q, page, size, sort, order)
         return {
             "data": data,
             "total": total,

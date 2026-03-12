@@ -40,7 +40,7 @@ const DataTable = ({ highlightEnabled }) => {
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
     const [totalResults, setTotalResults] = useState(0);
-    const pageSize = 200; // Tải 200 video mỗi lần cuộn để mượt mà
+    const pageSize = 500; // Tăng lên 500 video mỗi lần cuộn theo yêu cầu
 
     const rawApiBase = import.meta.env.VITE_API_BASE_URL || '';
     const API_BASE = rawApiBase ? (rawApiBase.startsWith('http') ? rawApiBase : `https://${rawApiBase}`) : '';
@@ -59,7 +59,7 @@ const DataTable = ({ highlightEnabled }) => {
         return () => clearTimeout(handler);
     }, [inputValue]);
 
-    const fetchData = async (query = '', pageNum = 1) => {
+    const fetchData = async (query = '', pageNum = 1, sort = sortConfig) => {
         if (pageNum === 1) {
             setLoading(true);
             setProgress(0);
@@ -67,7 +67,9 @@ const DataTable = ({ highlightEnabled }) => {
         setError(null);
 
         try {
-            const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}`;
+            const sortParam = sort.key || 'Created At';
+            const orderParam = sort.direction;
+            const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}&sort=${encodeURIComponent(sortParam)}&order=${orderParam}`;
             const response = await fetch(url);
 
             if (!response.ok) throw new Error('Failed to fetch data');
@@ -105,10 +107,10 @@ const DataTable = ({ highlightEnabled }) => {
         return () => window.removeEventListener('scroll', handleScroll);
     }, [loading, hasMore]);
 
-    // Gọi fetch khi trang hoặc từ khóa thay đổi
+    // Gọi fetch khi trang, từ khóa hoặc sắp xếp thay đổi
     useEffect(() => {
-        fetchData(searchTerm, page);
-    }, [searchTerm, page]);
+        fetchData(searchTerm, page, sortConfig);
+    }, [searchTerm, page, sortConfig]);
 
     const sortData = (key) => {
         let direction = 'asc';
@@ -116,6 +118,7 @@ const DataTable = ({ highlightEnabled }) => {
             direction = 'desc';
         }
         setSortConfig({ key, direction });
+        setPage(1); // Reset về trang 1 khi đổi sắp xếp
     };
 
     const filteredData = useMemo(() => {
@@ -129,26 +132,8 @@ const DataTable = ({ highlightEnabled }) => {
     }, [data, searchTerm]);
 
     const sortedData = useMemo(() => {
-        let sortableItems = [...filteredData];
-        if (sortConfig.key !== null) {
-            sortableItems.sort((a, b) => {
-                let aValue = a[sortConfig.key];
-                let bValue = b[sortConfig.key];
-
-                if (aValue === null || aValue === undefined) aValue = '';
-                if (bValue === null || bValue === undefined) bValue = '';
-
-                if (aValue < bValue) {
-                    return sortConfig.direction === 'asc' ? -1 : 1;
-                }
-                if (aValue > bValue) {
-                    return sortConfig.direction === 'asc' ? 1 : -1;
-                }
-                return 0;
-            });
-        }
-        return sortableItems;
-    }, [filteredData, sortConfig]);
+        return data; // Dữ liệu đã được Backend sắp xếp
+    }, [data]);
 
     // Header translation mapping
     const headerTranslations = {
@@ -289,7 +274,7 @@ const DataTable = ({ highlightEnabled }) => {
                     <img
                         src={src}
                         alt="Thumbnail"
-                        style={{ width: '100%', height: 'auto', borderRadius: '4px', objectFit: 'cover', display: 'block' }}
+                        style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', objectFit: 'cover', display: 'block' }}
                         onError={(e) => { e.target.style.display = 'none'; }}
                     />
                 );
