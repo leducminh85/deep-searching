@@ -60,9 +60,27 @@ const DataTable = ({ highlightEnabled }) => {
     }, [inputValue]);
 
     const fetchData = async (query = '', pageNum = 1, sort = sortConfig) => {
+        let progressInterval;
         if (pageNum === 1) {
             setLoading(true);
             setProgress(0);
+
+            // Giả lập tiến trình chạy từ 0 đến 60-80% trong 5 giây
+            const targetP = Math.floor(Math.random() * (80 - 60 + 1)) + 60;
+            const duration = 5000;
+            const step = 100;
+            const increment = targetP / (duration / step);
+
+            let currentP = 0;
+            progressInterval = setInterval(() => {
+                currentP += increment;
+                if (currentP >= targetP) {
+                    clearInterval(progressInterval);
+                    setProgress(targetP);
+                } else {
+                    setProgress(Math.floor(currentP));
+                }
+            }, step);
         }
         setError(null);
 
@@ -85,12 +103,20 @@ const DataTable = ({ highlightEnabled }) => {
 
             setTotalResults(result.total || 0);
             setHasMore(newData.length === pageSize);
-            setProgress(100);
+
+            if (pageNum === 1) {
+                clearInterval(progressInterval);
+                setProgress(100);
+            }
             if (pageNum === 1) setVisibleRows(30);
         } catch (err) {
+            if (pageNum === 1) clearInterval(progressInterval);
             setError(`${err.message}`);
         } finally {
-            if (pageNum === 1) setTimeout(() => setLoading(false), 200);
+            if (pageNum === 1) {
+                // Để người dùng thấy 100% một chút rồi mới tắt
+                setTimeout(() => setLoading(false), 400);
+            }
         }
     };
 
