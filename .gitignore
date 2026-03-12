@@ -56,9 +56,13 @@ Thumbs.db
 # Data and Logs
 *.log
 *.sqlite3
-*.db
 *.xlsx
 *.json
+*.txt
+!requirements.txt
+check_bug.py
+main.py
+main2.py
 ~$*.xlsx
 
 # Secrets and Proxies
