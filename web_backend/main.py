@@ -97,29 +97,38 @@ app.add_middleware(
 # Enable GZip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-async def get_data_internal():
-    """Lấy dữ liệu trực tiếp từ Supabase Table thay vì file Excel."""
+async def get_data_internal(query: str = None, page: int = 1, page_size: int = 200):
+    """Lấy dữ liệu từ Database, hỗ trợ tìm kiếm và phân trang."""
     global _cached_data
     
-    # 1. Trả về RAM cache nếu có (siêu tốc)
-    if _cached_data is not None:
+    # Tính toán vị trí bắt đầu và kết thúc (0-indexed)
+    start = (page - 1) * page_size
+    end = start + page_size - 1
+
+    # Nếu lấy trang đầu tiên và không có query, thử dùng RAM cache
+    if not query and page == 1 and _cached_data is not None:
         return _cached_data
 
-    # 2. Truy vấn trực tiếp từ Supabase
     if not supabase:
         print("⚠️ Supabase chưa được cấu hình.")
         return []
     
     try:
-        print("🔍 Đang tải dữ liệu từ Database...")
-        # Lấy toàn bộ dữ liệu từ bảng 'videos'
-        # Nếu dữ liệu quá lớn trong tương lai, có thể thêm .limit(1000) hoặc xử lý phân trang
-        response = supabase.table("videos").select("*").order("created_at", desc=True).execute()
+        print(f"🔍 Truy vấn DB: Trang {page} (Size: {page_size}) | Tìm kiếm: {query if query else 'Tất cả'}")
+        
+        # Bắt đầu builder với select count để biết tổng số dòng
+        builder = supabase.table("videos").select("*", count="exact")
+        
+        if query:
+            search_str = f"%{query}%"
+            builder = builder.or_(f"title.ilike.{search_str},summary.ilike.{search_str},caption.ilike.{search_str}")
+        
+        # Thực hiện truy vấn trong khoảng range của trang hiện tại
+        response = builder.order("created_at", desc=True).range(start, end).execute()
         
         records = response.data if response.data else []
+        total_count = response.count if response.count is not None else len(records)
         
-        # 3. Đồng bộ tên cột cho Frontend (Map lại các cột nếu cần)
-        # Frontend đang mong đợi các key giống file Excel cũ
         formatted_records = []
         for r in records:
             formatted_records.append({
@@ -133,18 +142,26 @@ async def get_data_internal():
                 "Summary": r.get("summary", "")
             })
 
-        _cached_data = formatted_records
-        return _cached_data
+        # Cache RAM chỉ cho trang đầu mặc định
+        if not query and page == 1:
+            _cached_data = formatted_records
+            
+        return formatted_records, total_count
 
     except Exception as e:
         print(f"❌ Lỗi khi truy vấn Database: {e}")
-        return []
+        return [], 0
 
 @app.get("/api/data")
-async def get_data():
+async def get_data(q: str = None, page: int = 1, size: int = 200):
     try:
-        data = await get_data_internal()
-        return {"data": data}
+        data, total = await get_data_internal(q, page, size)
+        return {
+            "data": data,
+            "total": total,
+            "page": page,
+            "page_size": size
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

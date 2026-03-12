@@ -36,6 +36,12 @@ const DataTable = ({ highlightEnabled }) => {
     const [visibleRows, setVisibleRows] = useState(30);
     const [showScrollTop, setShowScrollTop] = useState(false);
 
+    // Pagination state
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [totalResults, setTotalResults] = useState(0);
+    const pageSize = 200; // Tải 200 video mỗi lần cuộn để mượt mà
+
     const rawApiBase = import.meta.env.VITE_API_BASE_URL || '';
     const API_BASE = rawApiBase ? (rawApiBase.startsWith('http') ? rawApiBase : `https://${rawApiBase}`) : '';
 
@@ -47,95 +53,62 @@ const DataTable = ({ highlightEnabled }) => {
     useEffect(() => {
         const handler = setTimeout(() => {
             setSearchTerm(inputValue);
+            setPage(1); // Reset về trang 1 khi search mới
         }, 500);
 
         return () => clearTimeout(handler);
     }, [inputValue]);
 
-    const fetchData = async () => {
-        setLoading(true);
+    const fetchData = async (query = '', pageNum = 1) => {
+        if (pageNum === 1) {
+            setLoading(true);
+            setProgress(0);
+        }
         setError(null);
-        setProgress(0);
-
-        // Simulation for the "waiting/loading" phase
-        // Targets a random point between 60-80% over approximately 20 seconds
-        const targetPercent = Math.floor(Math.random() * 21) + 60;
-        const duration = 20000; // 20 seconds
-        const startTime = Date.now();
-
-        const simTimer = setInterval(() => {
-            const elapsed = Date.now() - startTime;
-            const calculatedProgress = Math.floor((elapsed / duration) * targetPercent);
-
-            setProgress(prev => {
-                if (calculatedProgress > prev && prev < targetPercent) {
-                    return calculatedProgress;
-                }
-                return prev;
-            });
-
-            if (elapsed >= duration) clearInterval(simTimer);
-        }, 500);
-
 
         try {
-            const response = await fetch(`${API_BASE}/api/data`);
-            clearInterval(simTimer); // Stop simulation once server starts responding
+            const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}`;
+            const response = await fetch(url);
 
-            if (!response.ok) throw new Error('Failed to fetch data from server');
+            if (!response.ok) throw new Error('Failed to fetch data');
 
-            // Track download progress
-            const reader = response.body.getReader();
-            const contentLength = +response.headers.get('Content-Length');
+            const result = await response.json();
+            const newData = result.data || [];
 
-            let receivedLength = 0;
-            let chunks = [];
-
-            // Ensure progress doesn't jump back if simulation was further along
-            setProgress(prev => Math.max(prev, 25));
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                chunks.push(value);
-                receivedLength += value.length;
-
-                if (contentLength && contentLength > 0) {
-                    let actualProgress = Math.round((receivedLength / contentLength) * 100);
-                    // Clamp to 100% to avoid exceeding due to Gzip decompression mismatches
-                    setProgress(prev => Math.min(Math.max(prev, actualProgress), 100));
-                } else {
-                    // Simulation for chunked or unknown size
-                    setProgress(prev => Math.min(prev + 1, 99));
-                }
-
+            if (pageNum === 1) {
+                setData(newData);
+            } else {
+                setData(prev => [...prev, ...newData]);
             }
 
-
-            // Concatenate chunks
-            let chunksAll = new Uint8Array(receivedLength);
-            let position = 0;
-            for (let chunk of chunks) {
-                chunksAll.set(chunk, position);
-                position += chunk.length;
-            }
-
-            // Decode and parse
-            const text = new TextDecoder("utf-8").decode(chunksAll);
-            const result = JSON.parse(text);
-
-            setData(result.data || []);
+            setTotalResults(result.total || 0);
+            setHasMore(newData.length === pageSize);
             setProgress(100);
-            setVisibleRows(30);
+            if (pageNum === 1) setVisibleRows(30);
         } catch (err) {
-            setError(`${err.message} (URL: ${API_BASE || 'chưa có API_BASE'}/api/data)`);
+            setError(`${err.message}`);
         } finally {
-            // Delay closing the loader slightly to let user see 100%
-            setTimeout(() => setLoading(false), 200);
+            if (pageNum === 1) setTimeout(() => setLoading(false), 200);
         }
     };
 
+    // Theo dõi cuộn trang để tải thêm (Infinite Scroll)
+    useEffect(() => {
+        const handleScroll = () => {
+            if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500 && !loading && hasMore) {
+                setPage(prev => prev + 1);
+            }
+            setShowScrollTop(window.scrollY > 400);
+        };
+
+        window.addEventListener('scroll', handleScroll);
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, [loading, hasMore]);
+
+    // Gọi fetch khi trang hoặc từ khóa thay đổi
+    useEffect(() => {
+        fetchData(searchTerm, page);
+    }, [searchTerm, page]);
 
     const sortData = (key) => {
         let direction = 'asc';
@@ -413,11 +386,17 @@ const DataTable = ({ highlightEnabled }) => {
                     </div>
                     <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
                         {searchTerm
-                            ? `Tìm thấy ${filteredData.length} / ${data.length}`
-                            : `${data.length} video`
+                            ? `Tìm thấy ${totalResults} kết quả (đã tải ${data.length})`
+                            : `Tổng cộng ${totalResults} video (đã tải ${data.length})`
                         }
                     </span>
                 </div>
+
+                {loading && page > 1 && (
+                    <div style={{ padding: '0.5rem', textAlign: 'center', color: 'var(--primary-color)', fontSize: '0.875rem' }}>
+                        Đang tải thêm video...
+                    </div>
+                )}
 
                 {loading && (
                     <div className="empty-state">
