@@ -111,7 +111,7 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 2
 
     if not supabase:
         print("⚠️ Supabase chưa được cấu hình.")
-        return []
+        return [], 0
     
     try:
         print(f"🔍 Truy vấn DB: Trang {page} (Size: {page_size}) | Tìm kiếm: {query if query else 'Tất cả'}")
@@ -142,9 +142,9 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 2
                 "Summary": r.get("summary", "")
             })
 
-        # Cache RAM chỉ cho trang đầu mặc định
+        # Cache RAM chỉ cho trang đầu mặc định (lưu dạng tuple)
         if not query and page == 1:
-            _cached_data = formatted_records
+            _cached_data = (formatted_records, total_count)
             
         return formatted_records, total_count
 
