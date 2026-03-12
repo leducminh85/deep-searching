@@ -327,11 +327,10 @@ const DataTable = ({ highlightEnabled }) => {
             try {
                 const date = new Date(value);
                 if (isNaN(date.getTime())) return value;
-                return date.toLocaleDateString('vi-VN', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                });
+                const d = date.getDate().toString().padStart(2, '0');
+                const m = (date.getMonth() + 1).toString().padStart(2, '0');
+                const y = date.getFullYear();
+                return `${d}/${m}/${y}`;
             } catch (e) {
                 return value;
             }
