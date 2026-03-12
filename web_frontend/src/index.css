@@ -259,12 +259,15 @@ tr:last-child td {
 }
 
 /* Specific Column Widths */
-th.col-caption,
-td.col-caption,
-th.col-summary,
-td.col-summary {
-  min-width: 200px;
-  max-width: 300px;
+.col-caption,
+.col-summary {
+  min-width: 250px;
+  max-width: 400px;
+}
+
+.col-thumbnail {
+  width: 214px;
+  min-width: 214px;
 }
 
 /* Resizable Headers */

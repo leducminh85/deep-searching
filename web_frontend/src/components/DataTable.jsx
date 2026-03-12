@@ -138,12 +138,12 @@ const DataTable = ({ highlightEnabled }) => {
     // Header translation mapping
     const headerTranslations = {
         'title': 'Tiêu đề',
-        'url': 'Liên kết',
-        'link': 'Liên kết',
+        'url': 'Link',
+        'link': 'Link',
         'views': 'Lượt xem',
-        'thumbnail': 'Ảnh thu nhỏ',
+        'thumbnail': 'Thumbnail',
         'caption': 'Phụ đề',
-        'summary': 'Tóm tắt',
+        'summary': 'Phân tích',
         'date published': 'Ngày đăng',
         'published': 'Ngày đăng',
         'channel name': 'Tên kênh',
@@ -157,9 +157,17 @@ const DataTable = ({ highlightEnabled }) => {
     };
 
     const headers = useMemo(() => {
-        if (data.length === 0) return [];
-        return Object.keys(data[0]).filter(h => h && !h.startsWith('__EMPTY') && !h.startsWith('Unnamed'));
-    }, [data]);
+        return [
+            'Title',
+            'URL',
+            'Views',
+            'Thumbnail',
+            'Caption',
+            'Summary',
+            'Date Published',
+            'Channel Name'
+        ];
+    }, []);
 
     useEffect(() => {
         fetchData();
@@ -315,6 +323,7 @@ const DataTable = ({ highlightEnabled }) => {
         const low = header.toLowerCase();
         if (low === 'caption') return 'col-caption';
         if (low === 'summary') return 'col-summary';
+        if (low === 'thumbnail') return 'col-thumbnail';
         return '';
     };
 
