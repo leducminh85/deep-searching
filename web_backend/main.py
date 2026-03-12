@@ -98,68 +98,47 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 async def get_data_internal():
-    """Internal function to load and cache data."""
+    """Lấy dữ liệu trực tiếp từ Supabase Table thay vì file Excel."""
     global _cached_data
     
-    # 1. Return memory cache if available
+    # 1. Trả về RAM cache nếu có (siêu tốc)
     if _cached_data is not None:
         return _cached_data
 
-    # 2. Try loading from disk JSON cache (much faster than Excel)
-    if os.path.exists(JSON_CACHE_PATH):
-        try:
-            with open(JSON_CACHE_PATH, "r", encoding="utf-8") as f:
-                _cached_data = json.load(f)
-                return _cached_data
-        except Exception as e:
-            print(f"⚠️ Disk cache load failed: {e}")
-
-    # 3. If no cache, perform full load from Excel
-    if not os.path.exists(LOCAL_DATA_PATH):
-        await sync_from_cloud()
-
-    if not os.path.exists(LOCAL_DATA_PATH):
-        # Fallback to a local file if it exists in the app package
-        pkg_data_path = os.path.join(os.path.dirname(__file__), DATA_FILE_NAME)
-        if os.path.exists(pkg_data_path):
-            shutil.copy(pkg_data_path, LOCAL_DATA_PATH)
-        else:
-            return []
+    # 2. Truy vấn trực tiếp từ Supabase
+    if not supabase:
+        print("⚠️ Supabase chưa được cấu hình.")
+        return []
     
     try:
-        # Optimization: Use calamine engine (much faster than openpyxl)
-        try:
-            df = pd.read_excel(LOCAL_DATA_PATH, sheet_name="NEW_CACHE_DATA_HIDDEN_", engine="calamine")
-        except Exception:
-            try:
-                df = pd.read_excel(LOCAL_DATA_PATH, engine="calamine")
-            except Exception:
-                # Fallback to openpyxl if calamine is not available
-                df = pd.read_excel(LOCAL_DATA_PATH, engine="openpyxl")
-
-            
-        df = df.fillna("")
-        cols_to_keep = [col for col in df.columns if not str(col).startswith("Unnamed")]
-        df = df[cols_to_keep]
-        df = df.loc[:, (df != "").any(axis=0) | (df.columns == "Thumbnail")]
+        print("🔍 Đang tải dữ liệu từ Database...")
+        # Lấy toàn bộ dữ liệu từ bảng 'videos'
+        # Nếu dữ liệu quá lớn trong tương lai, có thể thêm .limit(1000) hoặc xử lý phân trang
+        response = supabase.table("videos").select("*").order("created_at", desc=True).execute()
         
-        records = df.to_dict(orient="records")
-        if "Thumbnail" in df.columns:
-            for record in records:
-                if "Thumbnail" not in record: record["Thumbnail"] = ""
+        records = response.data if response.data else []
+        
+        # 3. Đồng bộ tên cột cho Frontend (Map lại các cột nếu cần)
+        # Frontend đang mong đợi các key giống file Excel cũ
+        formatted_records = []
+        for r in records:
+            formatted_records.append({
+                "Title": r.get("title", ""),
+                "URL": r.get("url", ""),
+                "Channel Name": r.get("channel_name", ""),
+                "Views": r.get("views", 0),
+                "Date Published": r.get("date_published", ""),
+                "Thumbnail": r.get("thumbnail", ""),
+                "Caption": r.get("caption", ""),
+                "Summary": r.get("summary", "")
+            })
 
-        # 4. Save to both caches
-        _cached_data = records
-        try:
-            with open(JSON_CACHE_PATH, "w", encoding="utf-8") as f:
-                json.dump(records, f, ensure_ascii=False)
-        except Exception as e:
-            print(f"⚠️ Failed to save disk cache: {e}")
+        _cached_data = formatted_records
+        return _cached_data
 
-        return records
     except Exception as e:
-        print(f"❌ Error loading data: {e}")
-        raise e
+        print(f"❌ Lỗi khi truy vấn Database: {e}")
+        return []
 
 @app.get("/api/data")
 async def get_data():
