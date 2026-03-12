@@ -110,7 +110,7 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 5
         "Created At": "created_at"
     }
     db_sort_column = column_map.get(sort_by, "created_at")
-    is_ascending = (sort_order.lower() == "asc")
+    is_descending = (sort_order.lower() == "desc")
 
     # Tính toán vị trí bắt đầu và kết thúc (0-indexed)
     start = (page - 1) * page_size
@@ -135,7 +135,7 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 5
             builder = builder.or_(f"title.ilike.{search_str},summary.ilike.{search_str},caption.ilike.{search_str}")
         
         # Thực hiện truy vấn với sắp xếp và phân trang
-        response = builder.order(db_sort_column, ascending=is_ascending).range(start, end).execute()
+        response = builder.order(db_sort_column, desc=is_descending).range(start, end).execute()
         
         records = response.data if response.data else []
         total_count = response.count if response.count is not None else len(records)
