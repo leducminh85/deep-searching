@@ -61,8 +61,6 @@ Thumbs.db
 *.txt
 !requirements.txt
 check_bug.py
-main.py
-main2.py
 ~$*.xlsx
 
 # Secrets and Proxies
