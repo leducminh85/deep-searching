@@ -1,9 +1,7 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, status
+from fastapi import FastAPI, Form, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-import pandas as pd
 import os
-import shutil
 import json
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -16,7 +14,6 @@ load_dotenv()
 # Supabase configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "excel-data")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Leducminh123")
 
 # Initialize Supabase client
@@ -24,63 +21,14 @@ supabase: Client = None
 if SUPABASE_URL and SUPABASE_KEY:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Use /tmp for data storage because Vercel/serverless environments are read-only
-# except for the /tmp directory.
-DATA_FILE_NAME = "data.xlsx"
-LOCAL_DATA_PATH = os.path.join(tempfile.gettempdir(), DATA_FILE_NAME)
-
-# Global cache for data
+# Global cache for data (only small subset)
 _cached_data = None
-JSON_CACHE_PATH = os.path.join(tempfile.gettempdir(), "data_cache.json")
-
-async def sync_from_cloud():
-    """Download data.xlsx from Supabase to local temporary storage."""
-    if not supabase:
-        print("⚠️ Supabase not configured. Skipping sync.")
-        return False
-    
-    try:
-        # Check if file exists in bucket
-        with open(LOCAL_DATA_PATH, "wb") as f:
-            res = supabase.storage.from_(SUPABASE_BUCKET).download(DATA_FILE_NAME)
-            f.write(res)
-        print(f"✅ Successfully synced {DATA_FILE_NAME} from cloud.")
-        return True
-    except Exception as e:
-        print(f"❌ Error syncing from cloud: {e}")
-        return False
-
-async def sync_to_cloud():
-    """Upload local data.xlsx to Supabase."""
-    if not supabase:
-        print("⚠️ Supabase not configured. Skipping upload.")
-        return False
-    
-    try:
-        with open(LOCAL_DATA_PATH, "rb") as f:
-            # upsert=True allows overwriting the existing file
-            supabase.storage.from_(SUPABASE_BUCKET).upload(
-                path=DATA_FILE_NAME, 
-                file=f,
-                file_options={"x-upsert": "true"}
-            )
-        print(f"✅ Successfully uploaded {DATA_FILE_NAME} to cloud.")
-        return True
-    except Exception as e:
-        print(f"❌ Error uploading to cloud: {e}")
-        return False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Pre-load data
-    print("🚀 App starting... Pre-loading data into cache.")
-    try:
-        await get_data_internal()
-        print("✅ Data pre-loaded successfully.")
-    except Exception as e:
-        print(f"⚠️ Failed to pre-load data: {e}")
+    # Startup: Pre-load small subset if possible
+    print("🚀 App starting... Memory-optimized mode.")
     yield
-    # Shutdown: Clean up if needed
     print("👋 App shutting down.")
 
 app = FastAPI(lifespan=lifespan)
@@ -97,7 +45,7 @@ app.add_middleware(
 # Enable GZip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-async def get_data_internal(query: str = None, page: int = 1, page_size: int = 500, sort_by: str = "Created At", sort_order: str = "desc"):
+async def get_data_internal(query: str = None, page: int = 1, page_size: int = 500, sort_by: str = "created_at", sort_order: str = "desc"):
     """Lấy dữ liệu từ Database, hỗ trợ tìm kiếm, phân trang và sắp xếp server-side."""
     global _cached_data
     
@@ -107,7 +55,10 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 5
         "Views": "views",
         "Date Published": "date_published",
         "Channel Name": "channel_name",
-        "Created At": "created_at"
+        "Created At": "created_at",
+        "Thumbnail": "thumbnail",
+        "Caption": "caption",
+        "Summary": "summary"
     }
     db_sort_column = column_map.get(sort_by, "created_at")
     is_descending = (sort_order.lower() == "desc")
@@ -116,8 +67,8 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 5
     start = (page - 1) * page_size
     end = start + page_size - 1
 
-    # Chỉ dùng RAM cache nếu lấy trang đầu, không search và dùng sắp xếp mặc định
-    if not query and page == 1 and sort_by == "Created At" and sort_order == "desc" and _cached_data is not None:
+    # RAM Cache tối thiểu để tránh tốn memory
+    if not query and page == 1 and sort_by == "created_at" and sort_order == "desc" and _cached_data is not None:
         return _cached_data
 
     if not supabase:
@@ -125,10 +76,8 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 5
         return [], 0
     
     try:
-        print(f"🔍 Truy vấn DB: Trang {page} | Sort: {db_sort_column} {sort_order}")
-        
-        # Bắt đầu builder với select count để biết tổng số dòng
-        builder = supabase.table("videos").select("*", count="exact")
+        # Tối ưu: Chỉ lấy các cột cần thiết để giảm payload và RAM
+        builder = supabase.table("videos").select("title,url,channel_name,views,date_published,thumbnail,caption,summary", count="exact")
         
         if query:
             search_str = f"%{query}%"
@@ -140,6 +89,7 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 5
         records = response.data if response.data else []
         total_count = response.count if response.count is not None else len(records)
         
+        # Format lại data sang key chuẩn cho Frontend
         formatted_records = []
         for r in records:
             formatted_records.append({
@@ -153,8 +103,8 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 5
                 "Summary": r.get("summary", "")
             })
 
-        # Cache RAM chỉ cho trạng thái mặc định
-        if not query and page == 1 and sort_by == "Created At" and sort_order == "desc":
+        # Chỉ cache kết quả trang đầu mặc định
+        if not query and page == 1 and sort_by == "created_at" and sort_order == "desc":
             _cached_data = (formatted_records, total_count)
             
         return formatted_records, total_count
@@ -164,20 +114,10 @@ async def get_data_internal(query: str = None, page: int = 1, page_size: int = 5
         return [], 0
 
 @app.get("/api/data")
-async def get_data(q: str = None, page: int = 1, size: int = 500, sort: str = "created_at", order: str = "desc"):
+async def get_data(q: str = None, page: int = 1, size: int = 200, sort: str = "created_at", order: str = "desc"):
     try:
-        # Chuẩn hóa tên cột sắp xếp từ Frontend hoặc dùng mặc định
-        column_map = {
-            "Title": "title",
-            "Views": "views",
-            "Date Published": "date_published",
-            "Channel Name": "channel_name",
-            "Created At": "created_at",
-            "created_at": "created_at"
-        }
-        db_sort_column = column_map.get(sort, "created_at")
-        
-        data, total = await get_data_internal(q, page, size, db_sort_column, order)
+        # Size mặc định giảm xuống 200 để an toàn hơn cho RAM
+        data, total = await get_data_internal(q, page, size, sort, order)
         return {
             "data": data,
             "total": total,
@@ -185,7 +125,6 @@ async def get_data(q: str = None, page: int = 1, size: int = 500, sort: str = "c
             "page_size": size
         }
     except Exception as e:
-        print(f"❌ Lỗi API /api/data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/verify")
@@ -193,36 +132,6 @@ async def verify_password(password: str = Form(...)):
     if password != ADMIN_PASSWORD:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
     return {"status": "ok"}
-
-@app.post("/api/upload")
-async def upload_file(password: str = Form(...), file: UploadFile = File(...)):
-    if password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
-        
-    if not file.filename.endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="Only .xlsx files are allowed")
-
-    try:
-        # Save locally first
-        with open(LOCAL_DATA_PATH, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-            
-        # Sync to Cloud Storage
-        success = await sync_to_cloud()
-        
-        if not success:
-             return {"message": "File saved locally but cloud sync failed. Changes might be lost on next restart."}
-        
-        # Invalidate caches so next request reloads from new file
-        global _cached_data
-        _cached_data = None
-        if os.path.exists(JSON_CACHE_PATH):
-            os.remove(JSON_CACHE_PATH)
-
-        return {"message": "File uploaded and synced to cloud storage successfully"}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

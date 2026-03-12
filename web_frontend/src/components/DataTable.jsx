@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Youtube, ArrowUp } from 'lucide-react';
+import { Youtube, ArrowUp, Search } from 'lucide-react';
 
 
 const Highlight = ({ text, search, enabled }) => {
@@ -40,7 +40,7 @@ const DataTable = ({ highlightEnabled }) => {
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
     const [totalResults, setTotalResults] = useState(0);
-    const pageSize = 500; // Tăng lên 500 video mỗi lần cuộn theo yêu cầu
+    const pageSize = 200; // Giảm xuống 200 để tối ưu RAM backend (512MB)
 
     const rawApiBase = import.meta.env.VITE_API_BASE_URL || '';
     const API_BASE = rawApiBase ? (rawApiBase.startsWith('http') ? rawApiBase : `https://${rawApiBase}`) : '';
@@ -50,14 +50,10 @@ const DataTable = ({ highlightEnabled }) => {
     const resizingRef = useRef(null);
 
     // Debounce search effect to prevent lag while typing
-    useEffect(() => {
-        const handler = setTimeout(() => {
-            setSearchTerm(inputValue);
-            setPage(1); // Reset về trang 1 khi search mới
-        }, 500);
-
-        return () => clearTimeout(handler);
-    }, [inputValue]);
+    const handleSearch = () => {
+        setSearchTerm(inputValue);
+        setPage(1);
+    };
 
     const fetchData = async (query = '', pageNum = 1, sort = sortConfig) => {
         let progressInterval;
@@ -390,19 +386,58 @@ const DataTable = ({ highlightEnabled }) => {
                         <input
                             type="text"
                             className="search-input"
-                            placeholder="Tìm kiếm nhanh trong toàn bộ các cột..."
+                            placeholder="Nhập từ khóa tìm kiếm..."
                             value={inputValue}
                             onChange={(e) => setInputValue(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                             style={{
                                 width: '100%',
                                 position: 'relative',
                                 zIndex: 2,
                                 background: 'transparent',
                                 color: (highlightEnabled && inputValue) ? '#000' : 'var(--text-color)',
+                                paddingRight: '120px', // Chừa chỗ cho nút Search và hint
                                 caretColor: (highlightEnabled && inputValue) ? '#000' : 'var(--text-color)',
-                                opacity: 1 // Ensure cursor is visible
+                                opacity: 1
                             }}
                         />
+                        <div style={{
+                            position: 'absolute',
+                            right: '5px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            zIndex: 10
+                        }}>
+                            <span style={{
+                                fontSize: '0.65rem',
+                                color: 'var(--text-muted)',
+                                opacity: 0.6,
+                                fontStyle: 'italic',
+                                pointerEvents: 'none'
+                            }}>
+                                nhấn Enter ↵
+                            </span>
+                            <button
+                                onClick={handleSearch}
+                                style={{
+                                    background: 'var(--primary-color)',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    width: '36px',
+                                    height: '36px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    color: 'white'
+                                }}
+                            >
+                                <Search size={18} />
+                            </button>
+                        </div>
                     </div>
                     <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
                         {searchTerm
