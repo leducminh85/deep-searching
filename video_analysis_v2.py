@@ -14,9 +14,9 @@ import json
 # --- CẤU HÌNH CƠ BẢN ---
 FILE_PATH = "data.xlsx"   
 SHEET_NAME = "NEW_CACHE_DATA_HIDDEN_"
-MAX_WORKERS = 2      # QUAN TRỌNG: Đã đổi thành 1 luồng để tránh tràn VRAM khi AI đọc đoạn text dài
+MAX_WORKERS = 4      # QUAN TRỌNG: Đã đổi thành 1 luồng để tránh tràn VRAM khi AI đọc đoạn text dài
 SAVE_EVERY = 2        
-MAX_TEST_VIDEOS = 1000  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
+MAX_TEST_VIDEOS = 10  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
 COOKIES_FILE = "cookies.txt"  # File cookies từ trình duyệt để YouTube không chặn
 
 # Biến toàn cục
@@ -135,17 +135,32 @@ def generate_summary(caption_text, row_idx):
         return "#"
         
     prompt = f"""
-    You are a video data analyst. Read the YouTube caption below and summarize and analyze its content for in-depth search. 
-    Please return results strictly following this format (write concisely, directly in English):
+    You are a video data analyst. Read the YouTube subtitles below, summarize and analyze the content for in-depth research.
+
+    Please answer in the following format (write concisely and directly in English):
+
     1. MAIN STORY: (Briefly describe what happened in 2-3 sentences).
-    2. CHARACTERS & RELATIONSHIPS: (Who was involved? What was their relationship?)
+    2. CHARACTERS & RELATIONSHIPS: (Who is involved? What is their relationship?)
     3. LOCATION / CONTEXT: (Where did the event take place?)
-    4. TYPE OF CONFLICT: (Conflict over property, verbal, physical, legal, neighbor conflict, racial discrimination, boyfriend/girlfriend, sovereign citizen, etc.)
-    5. NICHE KEYWORDS (TAGS): (List) English keywords that accurately describe the video's niche (only list if the video contains that content). For example: neighbor dispute, crazy ex, public freakout, Karen, road rage, racial discrimination, sovereign citizen, traffic stop...
+    4. TYPE OF CONFLICT: (Property conflict, verbal, physical, legal, neighbor conflict, racial discrimination, boyfriend/girlfriend, free citizen, etc.)
+    5. SPECIFIC KEYWORDS (TAGS):
+
+    **STRICT RULES FOR PARTS 4 & 5:**
+    - **NO NEGATIVE LISTING:** ONLY list types of conflict or keywords that are PRESENT and ACTIVE in the video. Do NOT list what the video is NOT about (e.g., do NOT write "No racism", "Non-violent", or "Not a legal dispute"). If a category doesn't apply, simply omit it or choose the one that does.
+    - ONLY list keywords when the situation ACTUALLY occurs, is clearly stated, or is the main focus of the video.
+    - NEVER include any keywords if:
+        • The situation is only briefly mentioned, hypothetical, or mentioned superficially.
+        • This is not the main content of the video.
+    - Only use accurate, specialized English keywords.
+
+    Example keywords (add only if necessary): neighbor dispute, crazy ex-lover, public outburst, Karen, street violence, racism, free citizen, traffic stop, difficult customer, confrontation with police, etc.
+
+    - ANTI-HALLUCINATION RULE: Do NOT guess or hypothesize. If a detail (like location or a specific role) is not explicitly stated or clearly implied by strong context clues, write "Undetermined" or "Unclear from transcript".
+    - NO SPECULATION: Only analyze based on what is actually present in the text. If you are not 100% sure about a specific fact, DO NOT include it in the analysis.
+
     Caption:
     {caption_text[:30000]}
     """
-    
     try:
         # CẬP NHẬT: Đổi sang model llama3.2:3b siêu tốc và mở rộng Context Window
         response = ollama.chat(
