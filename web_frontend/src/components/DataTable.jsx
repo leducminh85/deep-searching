@@ -68,8 +68,8 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
     const [appliedTags, setAppliedTags] = useState([]);
     const [appliedFilters, setAppliedFilters] = useState({});
     const [inputValue, setInputValue] = useState('');
-    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
-    const [visibleRows, setVisibleRows] = useState(30);
+    const [sortConfig, setSortConfig] = useState({ key: 'date_published', direction: 'desc' });
+    const [visibleRows, setVisibleRows] = useState(50);
     const [showScrollTop, setShowScrollTop] = useState(false);
 
     // Pagination state
@@ -111,7 +111,9 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
             if (res.ok) {
                 const data = await res.json();
                 setAvailableChannels(data);
-                setSelectedChannels(data); // Default select all channels
+                setSelectedChannels(data); 
+                // Đồng bộ hóa appliedFilters để hiển thị đúng ngay lập tức
+                setAppliedFilters(prev => ({ ...prev, selectedChannels: data }));
             }
         } catch (err) {
             console.error("Failed to fetch channels", err);
@@ -154,7 +156,7 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
             if (filters.maxViews) filterParams += `&max_views=${filters.maxViews}`;
             if (filters.startDate) filterParams += `&start_date=${filters.startDate}`;
             if (filters.endDate) filterParams += `&end_date=${filters.endDate}`;
-            if (filters.selectedChannels && filters.selectedChannels.length > 0) {
+            if (filters.selectedChannels && filters.selectedChannels.length > 0 && filters.selectedChannels.length < availableChannels.length) {
                 filterParams += `&channels=${encodeURIComponent(filters.selectedChannels.join(','))}`;
             }
 
@@ -179,7 +181,7 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
                 clearInterval(progressInterval);
                 setProgress(100);
             }
-            if (pageNum === 1) setVisibleRows(30);
+            if (pageNum === 1) setVisibleRows(50);
         } catch (err) {
             if (pageNum === 1) clearInterval(progressInterval);
             setError(`${err.message}`);

@@ -101,13 +101,12 @@ async def get_data_internal(
                 search_fields = ["title", "summary", "caption", "channel_name"]
                 if mode == "and":
                     for kw in keywords:
-                        # Thêm dấu ngoặc kép bao quanh pattern để tránh lỗi parse khi có ký tự đặc biệt
-                        pattern = f'"%{kw}%"'
+                        pattern = f"%{kw}%"
                         builder = builder.or_(",".join([f"{f}.ilike.{pattern}" for f in search_fields]))
                 else:
                     or_conds = []
                     for kw in keywords:
-                        pattern = f'"%{kw}%"'
+                        pattern = f"%{kw}%"
                         for f in search_fields: 
                             or_conds.append(f"{f}.ilike.{pattern}")
                     if or_conds: 
@@ -139,17 +138,20 @@ async def get_data_internal(
                 if max_views is not None: builder = builder.lte("views", max_views)
                 if start_date: builder = builder.gte("date_published", start_date)
                 if end_date: builder = builder.lte("date_published", end_date)
-                if channels: builder = builder.in_("channel_name", [c.strip() for c in channels.split(",") if c.strip()])
+                if channels: 
+                    chan_list = [c.strip() for c in channels.split(",") if c.strip()]
+                    if chan_list:
+                        builder = builder.in_("channel_name", chan_list)
                 
                 limit_f = ["title", "channel_name"]
                 if mode == "and":
                     for kw in keywords:
-                        pattern = f'"%{kw}%"'
+                        pattern = f"%{kw}%"
                         builder = builder.or_(",".join([f"{f}.ilike.{pattern}" for f in limit_f]))
                 else:
                     or_c = []
                     for kw in keywords:
-                        pattern = f'"%{kw}%"'
+                        pattern = f"%{kw}%"
                         for f in limit_f: or_c.append(f"{f}.ilike.{pattern}")
                     if or_c: builder = builder.or_(",".join(or_c))
                 response = builder.order(db_sort_column, desc=is_descending).range(start, end).execute()
