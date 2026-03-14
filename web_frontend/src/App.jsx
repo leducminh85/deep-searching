@@ -7,6 +7,7 @@ import AdminPage from './components/AdminPage';
 function App() {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [highlightEnabled, setHighlightEnabled] = useState(true);
+  const [searchMode, setSearchMode] = useState('or'); // 'or' or 'and'
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -15,6 +16,10 @@ function App() {
 
   const toggleTheme = () => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
+  };
+
+  const toggleSearchMode = () => {
+    setSearchMode(prev => (prev === 'or' ? 'and' : 'or'));
   };
 
   return (
@@ -27,13 +32,32 @@ function App() {
 
           </Link>
 
-          <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              className="theme-toggle"
+              onClick={toggleSearchMode}
+              title={searchMode === 'or' ? "Chế độ tìm kiếm: Một trong các từ khóa (OR)" : "Chế độ tìm kiếm: Tất cả từ khóa (AND)"}
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 'bold',
+                padding: '0 0.75rem',
+                minWidth: '60px',
+                height: '36px',
+                borderRadius: '8px',
+                border: '1px solid var(--glass-border)',
+                background: searchMode === 'and' ? 'var(--primary-color)' : 'transparent',
+                color: searchMode === 'and' ? 'white' : 'var(--text-color)',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              {searchMode.toUpperCase()}
+            </button>
             <button
               className="theme-toggle"
               onClick={() => setHighlightEnabled(!highlightEnabled)}
               title={highlightEnabled ? "Tắt Highlight" : "Bật Highlight"}
               style={{
-                marginRight: '0.5rem',
                 color: highlightEnabled ? 'var(--primary-color)' : 'inherit',
                 borderColor: highlightEnabled ? 'var(--primary-color)' : 'var(--glass-border)'
               }}
@@ -43,15 +67,12 @@ function App() {
             <button className="theme-toggle" onClick={toggleTheme} title="Đổi giao diện">
               {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
-            {/* <nav>
-              <Link to="/admin" className="btn" style={{ background: 'transparent', border: '1px solid var(--border-color)', boxShadow: 'none', color: 'var(--text-color)' }}>Admin Panel</Link>
-            </nav> */}
           </div>
         </header>
 
         <main>
           <Routes>
-            <Route path="/" element={<DataTable highlightEnabled={highlightEnabled} />} />
+            <Route path="/" element={<DataTable highlightEnabled={highlightEnabled} searchMode={searchMode} />} />
             <Route path="/admin" element={<AdminPage />} />
           </Routes>
         </main>
