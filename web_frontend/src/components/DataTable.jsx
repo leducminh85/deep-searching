@@ -269,8 +269,10 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
         setStartDate('');
         setEndDate('');
         setSelectedChannels(availableChannels);
+        setAppliedTags([]);
+        setSearchTags([]);
+        setPage(1);
         setAppliedFilters({});
-        fetchData('', 1, sortConfig, searchMode, {});
     };
 
     const sortedData = useMemo(() => {
@@ -299,7 +301,6 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
     };
 
     const applyAdvancedFilters = () => {
-        setPage(1);
         setIsFilterOpen(false);
         const filters = {
             minViews,
@@ -308,8 +309,8 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
             endDate,
             selectedChannels
         };
+        setPage(1);
         setAppliedFilters(filters);
-        fetchData(appliedTags.join(','), 1, sortConfig, searchMode, filters);
     };
 
     const setDatePreset = (days) => {
