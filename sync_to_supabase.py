@@ -87,15 +87,24 @@ def sync():
         total = len(records)
         print(f"📊 Tìm thấy {total} dòng dữ liệu. Bắt đầu đẩy lên Supabase...")
 
+        import time
         # Chạy Upsert theo từng Batch
         for i in range(0, total, BATCH_SIZE):
             batch = records[i : i + BATCH_SIZE]
-            try:
-                # upsert dựa trên cột 'url' (đã set UNIQUE trong DB)
-                supabase.table("videos").upsert(batch, on_conflict="url").execute()
-                print(f"✅ Đã xong: {min(i + BATCH_SIZE, total)} / {total}")
-            except Exception as e:
-                print(f"⚠️ Lỗi ở batch {i}: {e}")
+            
+            max_retries = 5
+            for attempt in range(max_retries + 1):
+                try:
+                    # upsert dựa trên cột 'url' (đã set UNIQUE trong DB)
+                    supabase.table("videos").upsert(batch, on_conflict="url").execute()
+                    print(f"✅ Đã xong: {min(i + BATCH_SIZE, total)} / {total}")
+                    break # Thành công thì thoát vòng lặp retry
+                except Exception as e:
+                    if attempt < max_retries:
+                        print(f"🔄 Thử lại batch {i} (lần {attempt + 1}/{max_retries}) do lỗi: {e}")
+                        time.sleep(60) # Đợi 2 giây trước khi thử lại
+                    else:
+                        print(f"❌ Đã thử {max_retries} lần nhưng vẫn lỗi ở batch {i}. Bỏ qua batch này. Lỗi cuối: {e}")
 
         print("\n🎉 HOÀN TẤT ĐỒNG BỘ DỮ LIỆU!")
 
