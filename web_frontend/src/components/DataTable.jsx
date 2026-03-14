@@ -111,9 +111,7 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
             if (res.ok) {
                 const data = await res.json();
                 setAvailableChannels(data);
-                // Mặc định chọn tất cả kênh? Hoặc không chọn gì (hiển thị hết)
-                // Theo yêu cầu "cho phép remove kênh không muốn hiển thị" -> mặc định hiển thị hết, 
-                // nhưng UI sẽ cho phép chọn danh sách các kênh muốn xem.
+                setSelectedChannels(data); // Default select all channels
             }
         } catch (err) {
             console.error("Failed to fetch channels", err);
@@ -268,7 +266,7 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
         setMaxViews('');
         setStartDate('');
         setEndDate('');
-        setSelectedChannels([]);
+        setSelectedChannels(availableChannels);
         setAppliedFilters({});
         fetchData('', 1, sortConfig, searchMode, {});
     };
