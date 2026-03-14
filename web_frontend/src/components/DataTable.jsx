@@ -14,11 +14,11 @@ const Highlight = ({ text, searches, enabled }) => {
 
     // Sort validSearches by length descending to match longest terms first
     const sortedSearches = [...validSearches].sort((a, b) => b.length - a.length);
-    
+
     // Create regex for words, escaping special chars
     const escapedSearches = sortedSearches.map(s => s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|');
     const regex = new RegExp(`(${escapedSearches})`, 'gi');
-    
+
     const parts = String(text).split(regex);
 
     return (
@@ -34,10 +34,10 @@ const Highlight = ({ text, searches, enabled }) => {
                 if (originalIndex !== -1) {
                     const color = `hsl(${(originalIndex * 137) % 360}, 70%, 50%)`;
                     return (
-                        <mark 
-                            key={i} 
-                            style={{ 
-                                backgroundColor: color, 
+                        <mark
+                            key={i}
+                            style={{
+                                backgroundColor: color,
                                 color: 'white',
                                 padding: '0 2px',
                                 borderRadius: '4px',
@@ -103,7 +103,7 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
         if (!isInitialized) return;
         const query = appliedTags.join(',');
         fetchData(query, page, sortConfig, searchMode, appliedFilters);
-    }, [appliedTags, page, sortConfig, searchMode, appliedFilters, isInitialized]);
+    }, [appliedTags, page, sortConfig, appliedFilters, isInitialized]);
 
     // Lấy danh sách kênh khi component mount
     useEffect(() => {
@@ -116,7 +116,7 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
             if (res.ok) {
                 const data = await res.json();
                 setAvailableChannels(data);
-                setSelectedChannels(data); 
+                setSelectedChannels(data);
                 // Đồng bộ hóa appliedFilters để hiển thị đúng ngay lập tức
                 setAppliedFilters(prev => ({ ...prev, selectedChannels: data }));
             }
@@ -176,7 +176,7 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
         try {
             const sortParam = sort.key || 'created_at';
             const orderParam = sort.direction;
-            
+
             // Build filter query params
             let filterParams = '';
             if (filters.minViews) filterParams += `&min_views=${filters.minViews}`;
@@ -286,9 +286,9 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
     const toggleFilter = () => setIsFilterOpen(!isFilterOpen);
 
     const handleChannelToggle = (channel) => {
-        setSelectedChannels(prev => 
-            prev.includes(channel) 
-                ? prev.filter(c => c !== channel) 
+        setSelectedChannels(prev =>
+            prev.includes(channel)
+                ? prev.filter(c => c !== channel)
                 : [...prev, channel]
         );
     };
@@ -355,7 +355,7 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
         const end = new Date();
         const start = new Date();
         start.setDate(end.getDate() - days);
-        
+
         setStartDate(start.toISOString().split('T')[0]);
         setEndDate(end.toISOString().split('T')[0]);
     };
@@ -534,8 +534,8 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
 
     return (
         <>
-            <div 
-                className={`sidebar-overlay ${isFilterOpen ? 'visible' : ''}`} 
+            <div
+                className={`sidebar-overlay ${isFilterOpen ? 'visible' : ''}`}
                 onClick={toggleFilter}
             />
 
@@ -551,53 +551,53 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
                     <div className="filter-group">
                         <label>Khoảng Lượt xem</label>
                         <div className="side-by-side">
-                            <input 
-                                type="number" 
-                                placeholder="Tối thiểu" 
-                                value={minViews} 
+                            <input
+                                type="number"
+                                placeholder="Tối thiểu"
+                                value={minViews}
                                 onChange={(e) => setMinViews(e.target.value)}
                             />
-                            <input 
-                                type="number" 
-                                placeholder="Tối đa" 
-                                value={maxViews} 
+                            <input
+                                type="number"
+                                placeholder="Tối đa"
+                                value={maxViews}
                                 onChange={(e) => setMaxViews(e.target.value)}
                             />
                         </div>
                     </div>
 
-                        <div className="filter-group">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                                <label style={{ margin: 0 }}>Khoảng Ngày đăng</label>
-                                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                                    <button 
-                                        onClick={() => setDatePreset(7)}
-                                        style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
-                                    >
-                                        7 ngày
-                                    </button>
-                                    <button 
-                                        onClick={() => setDatePreset(30)}
-                                        style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
-                                    >
-                                        30 ngày
-                                    </button>
-                                </div>
+                    <div className="filter-group">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <label style={{ margin: 0 }}>Khoảng Ngày đăng</label>
+                            <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                <button
+                                    onClick={() => setDatePreset(7)}
+                                    style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                                >
+                                    7 ngày
+                                </button>
+                                <button
+                                    onClick={() => setDatePreset(30)}
+                                    style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                                >
+                                    30 ngày
+                                </button>
                             </div>
-                            <div className="date-inputs">
+                        </div>
+                        <div className="date-inputs">
                             <div>
                                 <span>Từ ngày:</span>
-                                <input 
-                                    type="date" 
-                                    value={startDate} 
+                                <input
+                                    type="date"
+                                    value={startDate}
                                     onChange={(e) => setStartDate(e.target.value)}
                                 />
                             </div>
                             <div>
                                 <span>Đến ngày:</span>
-                                <input 
-                                    type="date" 
-                                    value={endDate} 
+                                <input
+                                    type="date"
+                                    value={endDate}
                                     onChange={(e) => setEndDate(e.target.value)}
                                 />
                             </div>
@@ -608,13 +608,13 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                             <label style={{ margin: 0 }}>Chọn Kênh hiển thị</label>
                             <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                <button 
+                                <button
                                     onClick={handleSelectAllChannels}
                                     style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
                                 >
                                     Tất cả
                                 </button>
-                                <button 
+                                <button
                                     onClick={handleDeselectAllChannels}
                                     style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
                                 >
@@ -625,9 +625,9 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
                         <div className="channel-list">
                             {availableChannels.map(channel => (
                                 <label key={channel} className="channel-item">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={selectedChannels.includes(channel)} 
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedChannels.includes(channel)}
                                         onChange={() => handleChannelToggle(channel)}
                                     />
                                     <span>{channel}</span>
@@ -647,49 +647,49 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
                 </div>
             </div>
 
-                <div className="table-container">
-                    {(appliedTags.length > 0 || Object.keys(appliedFilters).some(k => appliedFilters[k] && (Array.isArray(appliedFilters[k]) ? appliedFilters[k].length > 0 : true))) && (
-                        <div style={{ 
-                            padding: '0.5rem 1.25rem', 
-                            display: 'flex', 
-                            gap: '0.75rem', 
-                            alignItems: 'center',
-                            background: 'rgba(99, 102, 241, 0.05)',
-                            borderBottom: '1px solid var(--glass-border)',
-                            flexWrap: 'wrap'
-                        }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Bộ lọc:</span>
-                            
-                            {appliedFilters.minViews && (
-                                <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
-                                    Views ⏶ {Number(appliedFilters.minViews).toLocaleString()}
-                                </div>
-                            )}
-                            {appliedFilters.maxViews && (
-                                <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
-                                    Views ⏷ {Number(appliedFilters.maxViews).toLocaleString()}
-                                </div>
-                            )}
-                            {appliedFilters.startDate && (
-                                <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
-                                    Từ {appliedFilters.startDate}
-                                </div>
-                            )}
-                            {appliedFilters.endDate && (
-                                <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
-                                    Đến {appliedFilters.endDate}
-                                </div>
-                            )}
-                            {appliedFilters.selectedChannels && appliedFilters.selectedChannels.length > 0 && (
-                                <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
-                                    Kênh ({appliedFilters.selectedChannels.length})
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    <div className="toolbar" style={{ gap: '1rem', flexWrap: 'wrap' }}>
-                    <div className="search-wrapper" style={{ 
-                        flex: 1, 
+            <div className="table-container">
+                {(appliedTags.length > 0 || Object.keys(appliedFilters).some(k => appliedFilters[k] && (Array.isArray(appliedFilters[k]) ? appliedFilters[k].length > 0 : true))) && (
+                    <div style={{
+                        padding: '0.5rem 1.25rem',
+                        display: 'flex',
+                        gap: '0.75rem',
+                        alignItems: 'center',
+                        background: 'rgba(99, 102, 241, 0.05)',
+                        borderBottom: '1px solid var(--glass-border)',
+                        flexWrap: 'wrap'
+                    }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Bộ lọc:</span>
+
+                        {appliedFilters.minViews && (
+                            <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
+                                Views ⏶ {Number(appliedFilters.minViews).toLocaleString()}
+                            </div>
+                        )}
+                        {appliedFilters.maxViews && (
+                            <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
+                                Views ⏷ {Number(appliedFilters.maxViews).toLocaleString()}
+                            </div>
+                        )}
+                        {appliedFilters.startDate && (
+                            <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
+                                Từ {appliedFilters.startDate}
+                            </div>
+                        )}
+                        {appliedFilters.endDate && (
+                            <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
+                                Đến {appliedFilters.endDate}
+                            </div>
+                        )}
+                        {appliedFilters.selectedChannels && appliedFilters.selectedChannels.length > 0 && (
+                            <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
+                                Kênh ({appliedFilters.selectedChannels.length})
+                            </div>
+                        )}
+                    </div>
+                )}
+                <div className="toolbar" style={{ gap: '1rem', flexWrap: 'wrap' }}>
+                    <div className="search-wrapper" style={{
+                        flex: 1,
                         position: 'relative',
                         display: 'flex',
                         alignItems: 'center',
@@ -714,7 +714,7 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
                                 fontWeight: '600'
                             }}>
                                 {tag}
-                                <button 
+                                <button
                                     onClick={() => removeTag(tag)}
                                     style={{
                                         background: 'none',
@@ -784,8 +784,8 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
                             </button>
                         </div>
                     </div>
-                    
-                    <button 
+
+                    <button
                         onClick={toggleFilter}
                         className={`theme-toggle ${isFilterOpen ? 'active' : ''}`}
                         title="Bộ lọc nâng cao"

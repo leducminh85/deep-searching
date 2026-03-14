@@ -409,19 +409,25 @@ th {
 }
 
 @keyframes slideDown {
-  from { 
-    opacity: 0; 
-    transform: translateY(-10px); 
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
   }
-  to { 
-    opacity: 1; 
-    transform: translateY(0); 
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 /* Sidebar Styles */
@@ -434,7 +440,8 @@ th {
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  z-index: 9998; /* Cực cao để trên cả Header */
+  z-index: 9998;
+  /* Cực cao để trên cả Header */
   animation: fadeIn 0.4s ease-out;
 }
 
@@ -448,7 +455,8 @@ th {
   background: var(--bg-color);
   border-left: 1px solid var(--glass-border);
   box-shadow: -20px 0 60px rgba(0, 0, 0, 1);
-  z-index: 9999; /* Cao nhất hệ thống */
+  z-index: 9999;
+  /* Cao nhất hệ thống */
   transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1);
   display: flex;
   flex-direction: column;
