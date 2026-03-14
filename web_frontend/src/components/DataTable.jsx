@@ -67,6 +67,9 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
     const [searchTags, setSearchTags] = useState([]);
     const [appliedTags, setAppliedTags] = useState([]);
     const [appliedFilters, setAppliedFilters] = useState({});
+    const [isInitialized, setIsInitialized] = useState(false);
+    const abortControllerRef = useRef(null);
+    const progressIntervalRef = useRef(null);
     const [inputValue, setInputValue] = useState('');
     const [sortConfig, setSortConfig] = useState({ key: 'date_published', direction: 'desc' });
     const [visibleRows, setVisibleRows] = useState(50);
@@ -76,6 +79,7 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
     const [totalResults, setTotalResults] = useState(0);
+    const [loadingMore, setLoadingMore] = useState(false);
     const pageSize = 200; // Giảm xuống 200 để tối ưu RAM backend (512MB)
 
     // Advanced Filter state
@@ -96,9 +100,10 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
 
     // Gọi fetch khi trang, từ khóa hoặc sắp xếp thay đổi
     useEffect(() => {
+        if (!isInitialized) return;
         const query = appliedTags.join(',');
         fetchData(query, page, sortConfig, searchMode, appliedFilters);
-    }, [appliedTags, page, sortConfig, searchMode, appliedFilters]);
+    }, [appliedTags, page, sortConfig, searchMode, appliedFilters, isInitialized]);
 
     // Lấy danh sách kênh khi component mount
     useEffect(() => {
@@ -117,14 +122,33 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
             }
         } catch (err) {
             console.error("Failed to fetch channels", err);
+        } finally {
+            setIsInitialized(true);
         }
     };
 
     const fetchData = async (query = '', pageNum = 1, sort = sortConfig, mode = 'or', filters = {}) => {
-        let progressInterval;
+        // Chỉ abort request cũ khi tải trang 1 (tải lại từ đầu)
+        if (pageNum === 1) {
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+            }
+        }
+        const controller = new AbortController();
+        if (pageNum === 1) {
+            abortControllerRef.current = controller;
+        }
+        const { signal } = controller;
+
+        // Luôn dọn dẹp progress interval cũ trước khi tạo mới
+        if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+        }
+
         if (pageNum === 1) {
             setLoading(true);
-            setData([]); // Clear data to avoid showing stale results on error/timeout
+            setData([]);
             setProgress(0);
 
             // Giả lập tiến trình chạy từ 0 đến 60-80% trong 5 giây
@@ -134,15 +158,18 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
             const increment = targetP / (duration / step);
 
             let currentP = 0;
-            progressInterval = setInterval(() => {
+            progressIntervalRef.current = setInterval(() => {
                 currentP += increment;
                 if (currentP >= targetP) {
-                    clearInterval(progressInterval);
+                    clearInterval(progressIntervalRef.current);
+                    progressIntervalRef.current = null;
                     setProgress(targetP);
                 } else {
                     setProgress(Math.floor(currentP));
                 }
             }, step);
+        } else {
+            setLoadingMore(true);
         }
         setError(null);
 
@@ -161,7 +188,7 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
             }
 
             const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}&sort=${encodeURIComponent(sortParam)}&order=${orderParam}&mode=${mode}${filterParams}`;
-            const response = await fetch(url);
+            const response = await fetch(url, { signal });
 
             if (!response.ok) throw new Error('Failed to fetch data');
 
@@ -178,17 +205,28 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
             setHasMore(newData.length === pageSize);
 
             if (pageNum === 1) {
-                clearInterval(progressInterval);
+                if (progressIntervalRef.current) {
+                    clearInterval(progressIntervalRef.current);
+                    progressIntervalRef.current = null;
+                }
                 setProgress(100);
+                setVisibleRows(50);
             }
-            if (pageNum === 1) setVisibleRows(50);
         } catch (err) {
-            if (pageNum === 1) clearInterval(progressInterval);
+            if (err.name === 'AbortError') return;
+            if (pageNum === 1 && progressIntervalRef.current) {
+                clearInterval(progressIntervalRef.current);
+                progressIntervalRef.current = null;
+            }
             setError(`${err.message}`);
         } finally {
+            if (signal.aborted) return;
             if (pageNum === 1) {
-                // Để người dùng thấy 100% một chút rồi mới tắt
-                setTimeout(() => setLoading(false), 400);
+                setTimeout(() => {
+                    if (!signal.aborted) setLoading(false);
+                }, 400);
+            } else {
+                setLoadingMore(false);
             }
         }
     };
@@ -373,12 +411,15 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
             if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 800) {
                 if (visibleRows < sortedData.length) {
                     setVisibleRows(prev => Math.min(prev + 30, sortedData.length));
+                } else if (hasMore && !loading && !loadingMore) {
+                    // Đã hiển thị hết data hiện có, tải thêm từ server
+                    setPage(prev => prev + 1);
                 }
             }
         };
         window.addEventListener('scroll', handleAutoLoad);
         return () => window.removeEventListener('scroll', handleAutoLoad);
-    }, [visibleRows, sortedData.length]);
+    }, [visibleRows, sortedData.length, hasMore, loading, loadingMore]);
 
     const handleScroll = (e) => {
         const { scrollTop, clientHeight, scrollHeight } = e.target;
