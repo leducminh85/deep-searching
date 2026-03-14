@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Youtube, ArrowUp, Search } from 'lucide-react';
+import { Youtube, ArrowUp, Search, Filter, X } from 'lucide-react';
 
 
 const removeAccents = (str) => {
@@ -66,6 +66,7 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
 
     const [searchTags, setSearchTags] = useState([]);
     const [appliedTags, setAppliedTags] = useState([]);
+    const [appliedFilters, setAppliedFilters] = useState({});
     const [inputValue, setInputValue] = useState('');
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
     const [visibleRows, setVisibleRows] = useState(30);
@@ -77,6 +78,15 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
     const [totalResults, setTotalResults] = useState(0);
     const pageSize = 200; // Giảm xuống 200 để tối ưu RAM backend (512MB)
 
+    // Advanced Filter state
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [minViews, setMinViews] = useState('');
+    const [maxViews, setMaxViews] = useState('');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+    const [availableChannels, setAvailableChannels] = useState([]);
+    const [selectedChannels, setSelectedChannels] = useState([]); // List of channels to INCLUDE
+
     const rawApiBase = import.meta.env.VITE_API_BASE_URL || '';
     const API_BASE = rawApiBase ? (rawApiBase.startsWith('http') ? rawApiBase : `https://${rawApiBase}`) : '';
 
@@ -87,10 +97,30 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
     // Gọi fetch khi trang, từ khóa hoặc sắp xếp thay đổi
     useEffect(() => {
         const query = appliedTags.join(',');
-        fetchData(query, page, sortConfig, searchMode);
-    }, [appliedTags, page, sortConfig, searchMode]);
+        fetchData(query, page, sortConfig, searchMode, appliedFilters);
+    }, [appliedTags, page, sortConfig, searchMode, appliedFilters]);
 
-    const fetchData = async (query = '', pageNum = 1, sort = sortConfig, mode = 'or') => {
+    // Lấy danh sách kênh khi component mount
+    useEffect(() => {
+        fetchChannels();
+    }, []);
+
+    const fetchChannels = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/channels`);
+            if (res.ok) {
+                const data = await res.json();
+                setAvailableChannels(data);
+                // Mặc định chọn tất cả kênh? Hoặc không chọn gì (hiển thị hết)
+                // Theo yêu cầu "cho phép remove kênh không muốn hiển thị" -> mặc định hiển thị hết, 
+                // nhưng UI sẽ cho phép chọn danh sách các kênh muốn xem.
+            }
+        } catch (err) {
+            console.error("Failed to fetch channels", err);
+        }
+    };
+
+    const fetchData = async (query = '', pageNum = 1, sort = sortConfig, mode = 'or', filters = {}) => {
         let progressInterval;
         if (pageNum === 1) {
             setLoading(true);
@@ -119,7 +149,18 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
         try {
             const sortParam = sort.key || 'created_at';
             const orderParam = sort.direction;
-            const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}&sort=${encodeURIComponent(sortParam)}&order=${orderParam}&mode=${mode}`;
+            
+            // Build filter query params
+            let filterParams = '';
+            if (filters.minViews) filterParams += `&min_views=${filters.minViews}`;
+            if (filters.maxViews) filterParams += `&max_views=${filters.maxViews}`;
+            if (filters.startDate) filterParams += `&start_date=${filters.startDate}`;
+            if (filters.endDate) filterParams += `&end_date=${filters.endDate}`;
+            if (filters.selectedChannels && filters.selectedChannels.length > 0) {
+                filterParams += `&channels=${encodeURIComponent(filters.selectedChannels.join(','))}`;
+            }
+
+            const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}&sort=${encodeURIComponent(sortParam)}&order=${orderParam}&mode=${mode}${filterParams}`;
             const response = await fetch(url);
 
             if (!response.ok) throw new Error('Failed to fetch data');
@@ -204,6 +245,34 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
         setPage(1); // Reset về trang 1 khi đổi sắp xếp
     };
 
+    const toggleFilter = () => setIsFilterOpen(!isFilterOpen);
+
+    const handleChannelToggle = (channel) => {
+        setSelectedChannels(prev => 
+            prev.includes(channel) 
+                ? prev.filter(c => c !== channel) 
+                : [...prev, channel]
+        );
+    };
+
+    const handleSelectAllChannels = () => {
+        setSelectedChannels([...availableChannels]);
+    };
+
+    const handleDeselectAllChannels = () => {
+        setSelectedChannels([]);
+    };
+
+    const clearFilters = () => {
+        setMinViews('');
+        setMaxViews('');
+        setStartDate('');
+        setEndDate('');
+        setSelectedChannels([]);
+        setAppliedFilters({});
+        fetchData('', 1, sortConfig, searchMode, {});
+    };
+
     const sortedData = useMemo(() => {
         return data; // Dữ liệu đã được Backend sắp xếp
     }, [data]);
@@ -227,6 +296,29 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
         if (!header) return header;
         const normalized = header.toLowerCase().trim();
         return headerTranslations[normalized] || header;
+    };
+
+    const applyAdvancedFilters = () => {
+        setPage(1);
+        setIsFilterOpen(false);
+        const filters = {
+            minViews,
+            maxViews,
+            startDate,
+            endDate,
+            selectedChannels
+        };
+        setAppliedFilters(filters);
+        fetchData(appliedTags.join(','), 1, sortConfig, searchMode, filters);
+    };
+
+    const setDatePreset = (days) => {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - days);
+        
+        setStartDate(start.toISOString().split('T')[0]);
+        setEndDate(end.toISOString().split('T')[0]);
     };
 
     const headers = useMemo(() => {
@@ -400,8 +492,160 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
 
     return (
         <>
-            <div className="table-container">
-                <div className="toolbar" style={{ gap: '1rem' }}>
+            <div 
+                className={`sidebar-overlay ${isFilterOpen ? 'visible' : ''}`} 
+                onClick={toggleFilter}
+            />
+
+            <div className={`filter-sidebar ${isFilterOpen ? 'open' : ''}`}>
+                <div className="sidebar-header">
+                    <h2>Bộ lọc nâng cao</h2>
+                    <button onClick={toggleFilter} className="close-btn">
+                        <X size={24} />
+                    </button>
+                </div>
+
+                <div className="sidebar-content">
+                    <div className="filter-group">
+                        <label>Khoảng Lượt xem</label>
+                        <div className="side-by-side">
+                            <input 
+                                type="number" 
+                                placeholder="Tối thiểu" 
+                                value={minViews} 
+                                onChange={(e) => setMinViews(e.target.value)}
+                            />
+                            <input 
+                                type="number" 
+                                placeholder="Tối đa" 
+                                value={maxViews} 
+                                onChange={(e) => setMaxViews(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                        <div className="filter-group">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                                <label style={{ margin: 0 }}>Khoảng Ngày đăng</label>
+                                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                    <button 
+                                        onClick={() => setDatePreset(7)}
+                                        style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                                    >
+                                        7 ngày
+                                    </button>
+                                    <button 
+                                        onClick={() => setDatePreset(30)}
+                                        style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                                    >
+                                        30 ngày
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="date-inputs">
+                            <div>
+                                <span>Từ ngày:</span>
+                                <input 
+                                    type="date" 
+                                    value={startDate} 
+                                    onChange={(e) => setStartDate(e.target.value)}
+                                />
+                            </div>
+                            <div>
+                                <span>Đến ngày:</span>
+                                <input 
+                                    type="date" 
+                                    value={endDate} 
+                                    onChange={(e) => setEndDate(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="filter-group">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <label style={{ margin: 0 }}>Chọn Kênh hiển thị</label>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <button 
+                                    onClick={handleSelectAllChannels}
+                                    style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                                >
+                                    Tất cả
+                                </button>
+                                <button 
+                                    onClick={handleDeselectAllChannels}
+                                    style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                                >
+                                    Bỏ hết
+                                </button>
+                            </div>
+                        </div>
+                        <div className="channel-list">
+                            {availableChannels.map(channel => (
+                                <label key={channel} className="channel-item">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={selectedChannels.includes(channel)} 
+                                        onChange={() => handleChannelToggle(channel)}
+                                    />
+                                    <span>{channel}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="sidebar-footer">
+                    <button onClick={applyAdvancedFilters} className="apply-btn">
+                        Áp dụng bộ lọc
+                    </button>
+                    <button onClick={clearFilters} className="reset-btn">
+                        Đặt lại mặc định
+                    </button>
+                </div>
+            </div>
+
+                <div className="table-container">
+                    {(appliedTags.length > 0 || Object.keys(appliedFilters).some(k => appliedFilters[k] && (Array.isArray(appliedFilters[k]) ? appliedFilters[k].length > 0 : true))) && (
+                        <div style={{ 
+                            padding: '0.5rem 1.25rem', 
+                            display: 'flex', 
+                            gap: '0.75rem', 
+                            alignItems: 'center',
+                            background: 'rgba(99, 102, 241, 0.05)',
+                            borderBottom: '1px solid var(--glass-border)',
+                            flexWrap: 'wrap'
+                        }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Bộ lọc:</span>
+                            
+                            {appliedFilters.minViews && (
+                                <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
+                                    Views ⏶ {Number(appliedFilters.minViews).toLocaleString()}
+                                </div>
+                            )}
+                            {appliedFilters.maxViews && (
+                                <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
+                                    Views ⏷ {Number(appliedFilters.maxViews).toLocaleString()}
+                                </div>
+                            )}
+                            {appliedFilters.startDate && (
+                                <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
+                                    Từ {appliedFilters.startDate}
+                                </div>
+                            )}
+                            {appliedFilters.endDate && (
+                                <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
+                                    Đến {appliedFilters.endDate}
+                                </div>
+                            )}
+                            {appliedFilters.selectedChannels && appliedFilters.selectedChannels.length > 0 && (
+                                <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
+                                    Kênh ({appliedFilters.selectedChannels.length})
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    <div className="toolbar" style={{ gap: '1rem', flexWrap: 'wrap' }}>
                     <div className="search-wrapper" style={{ 
                         flex: 1, 
                         position: 'relative',
@@ -498,6 +742,15 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
                             </button>
                         </div>
                     </div>
+                    
+                    <button 
+                        onClick={toggleFilter}
+                        className={`theme-toggle ${isFilterOpen ? 'active' : ''}`}
+                        title="Bộ lọc nâng cao"
+                    >
+                        <Filter size={20} />
+                    </button>
+
                     <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
                         {appliedTags.length > 0
                             ? `Tìm thấy ${totalResults.toLocaleString()} kết quả`
