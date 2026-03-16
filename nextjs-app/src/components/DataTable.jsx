@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Youtube, ArrowUp, Search, Filter, X } from 'lucide-react';
+import { Youtube, ArrowUp, Search, Filter, X, Plus } from 'lucide-react';
 
 
 const removeAccents = (str) => {
@@ -98,6 +98,12 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
     // Column resizing state
     const [columnWidths, setColumnWidths] = useState({});
     const resizingRef = useRef(null);
+    const [isAddChannelOpen, setIsAddChannelOpen] = useState(false);
+    const [newChannelUrl, setNewChannelUrl] = useState('');
+    const [newChannelNote, setNewChannelNote] = useState('');
+    const [isSubmittingChannel, setIsSubmittingChannel] = useState(false);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [urlError, setUrlError] = useState('');
 
     // Gọi fetch khi trang, từ khóa hoặc sắp xếp thay đổi
     useEffect(() => {
@@ -433,6 +439,53 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
 
     const scrollToTop = () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleAddChannel = async (e) => {
+        e.preventDefault();
+        setUrlError('');
+
+        if (!newChannelUrl.trim()) {
+            setUrlError('Vui lòng nhập địa chỉ kênh');
+            return;
+        }
+
+        // Simple URL validation
+        try {
+            new URL(newChannelUrl);
+        } catch (_) {
+            setUrlError('Vui lòng nhập một địa chỉ URL hợp lệ (ví dụ: https://youtube.com/...)');
+            return;
+        }
+
+        setIsSubmittingChannel(true);
+        try {
+            const response = await fetch('/api/channel-sources', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    channel_url: newChannelUrl,
+                    note: newChannelNote
+                }),
+            });
+
+            if (response.ok) {
+                setNewChannelUrl('');
+                setNewChannelNote('');
+                setIsAddChannelOpen(false);
+                setShowSuccessModal(true);
+            } else {
+                const errData = await response.json();
+                alert(`Lỗi: ${errData.error || 'Không thể gửi yêu cầu'}`);
+            }
+        } catch (error) {
+            console.error('Error adding channel:', error);
+            alert('Lỗi hệ thống: Không thể kết nối tới máy chủ. Vui lòng thử lại sau.');
+        } finally {
+            setIsSubmittingChannel(false);
+        }
     };
 
     // Resizing logic
@@ -872,13 +925,109 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
                 )}
             </div>
 
-            <button
-                className={`scroll-to-top ${showScrollTop ? 'visible' : ''}`}
-                onClick={scrollToTop}
-                title="Scroll to Top"
-            >
-                <ArrowUp size={24} />
-            </button>
+            <div className="floating-actions">
+                <button
+                    className={`floating-btn scroll-to-top ${showScrollTop ? 'visible' : ''}`}
+                    onClick={scrollToTop}
+                    title="Scroll to Top"
+                >
+                    <ArrowUp size={24} />
+                </button>
+                <button
+                    className="floating-btn"
+                    onClick={() => setIsAddChannelOpen(true)}
+                    title="Thêm kênh nguồn"
+                >
+                    <Plus size={24} />
+                </button>
+            </div>
+
+            {isAddChannelOpen && (
+                <div className="modal-overlay" onClick={() => !isSubmittingChannel && setIsAddChannelOpen(false)}>
+                    <div className="modal-container" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2>Thêm kênh nguồn bổ sung</h2>
+                        </div>
+                        <form onSubmit={handleAddChannel} noValidate>
+                            <div className="form-group">
+                                <label>Địa chỉ kênh (URL)</label>
+                                <input
+                                    type="url"
+                                    placeholder="https://www.youtube.com/@channel"
+                                    value={newChannelUrl}
+                                    onChange={(e) => {
+                                        setNewChannelUrl(e.target.value);
+                                        if (urlError) setUrlError('');
+                                    }}
+                                    className={urlError ? 'input-error' : ''}
+                                    required
+                                    disabled={isSubmittingChannel}
+                                />
+                                {urlError && (
+                                    <div style={{ 
+                                        color: '#f43f5e', 
+                                        fontSize: '0.75rem', 
+                                        marginTop: '0.5rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}>
+                                        <span>⚠️</span> {urlError}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="form-group">
+                                <label>Ghi chú</label>
+                                <input
+                                    type="text"
+                                    placeholder="Nhập ghi chú nếu có..."
+                                    value={newChannelNote}
+                                    onChange={(e) => setNewChannelNote(e.target.value)}
+                                    disabled={isSubmittingChannel}
+                                />
+                            </div>
+                            <div className="modal-footer">
+                                <button
+                                    type="button"
+                                    className="modal-btn-cancel"
+                                    onClick={() => setIsAddChannelOpen(false)}
+                                    disabled={isSubmittingChannel}
+                                >
+                                    Hủy bỏ
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="modal-btn-confirm"
+                                    disabled={isSubmittingChannel || !newChannelUrl.trim()}
+                                >
+                                    {isSubmittingChannel ? 'Đang gửi...' : 'Xác nhận'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {showSuccessModal && (
+                <div className="modal-overlay" onClick={() => setShowSuccessModal(false)}>
+                    <div className="modal-container success-popup" onClick={e => e.stopPropagation()}>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '4rem', marginBottom: '1.5rem' }}>✅</div>
+                            <h2 style={{ marginBottom: '1rem', color: 'var(--text-color)' }}>Đã ghi nhận!</h2>
+                            <p style={{ color: 'var(--text-muted)', lineHeight: '1.6', fontSize: '0.95rem' }}>
+                                Cảm ơn bạn! Kênh nguồn đã được ghi nhận vào hệ thống và sẽ được cập nhật sau ít ngày.
+                            </p>
+                            <button 
+                                className="modal-btn-confirm" 
+                                style={{ marginTop: '2rem', width: '100%' }}
+                                onClick={() => setShowSuccessModal(false)}
+                            >
+                                Đóng
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 };
