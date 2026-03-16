@@ -19,7 +19,10 @@ export async function GET(request) {
         const endDate = searchParams.get('end_date') || null;
         const channels = searchParams.get('channels') || null;
 
-        const [data, total] = await getDataInternal(query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels);
+        const [data, total, errorInfo] = await getDataInternal(query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels);
+        if (errorInfo) {
+            return NextResponse.json({ detail: errorInfo, data: [], total: 0 }, { status: 500 });
+        }
         return NextResponse.json({
             data,
             total,
@@ -52,8 +55,7 @@ async function getDataInternal(query, page, pageSize, sortBy, sortOrder, mode, m
     }
 
     if (!supabase) {
-        console.log('⚠️ Supabase chưa được cấu hình.');
-        return [[], 0];
+        return [[], 0, "Supabase environment variables (SUPABASE_URL, SUPABASE_KEY) are missing in production settings."];
     }
 
     try {
@@ -178,11 +180,11 @@ async function getDataInternal(query, page, pageSize, sortBy, sortOrder, mode, m
         }));
 
         if (!hasFilters && page === 1 && dbSortColumn === 'created_at' && isDescending) {
-            _cachedData = [formatted, totalCount];
+            _cachedData = [formatted, totalCount, null];
         }
-        return [formatted, totalCount];
+        return [formatted, totalCount, null];
     } catch (e) {
         console.error(`❌ Database error: ${e}`);
-        return [[], 0];
+        return [[], 0, String(e.message || e)];
     }
 }
