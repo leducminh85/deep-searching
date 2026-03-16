@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Sun, Moon } from 'lucide-react';
-import AdminPage from '@/components/AdminPage';
+import AdminPage from '../../components/AdminPage';
 
 export default function AdminPageRoute() {
   const [theme, setTheme] = useState('dark');
