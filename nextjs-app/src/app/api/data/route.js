@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import supabase from '../../../../lib/supabase';
+import supabase from '../../../lib/supabase';
 
 // Global cache for data (only small subset)
 let _cachedData = null;
