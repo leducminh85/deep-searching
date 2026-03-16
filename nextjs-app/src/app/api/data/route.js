@@ -23,14 +23,44 @@ export async function GET(request) {
         if (errorInfo) {
             return NextResponse.json({ detail: errorInfo, data: [], total: 0 }, { status: 500 });
         }
-        return NextResponse.json({
+        const response = NextResponse.json({
             data,
             total,
             page,
             page_size: pageSize
         });
+
+        // Background logging for search history (don't await to keep response fast)
+        if (page === 1 && query && query.trim()) {
+            logSearchHistory(query, mode, total);
+        }
+
+        return response;
     } catch (e) {
         return NextResponse.json({ detail: e.message }, { status: 500 });
+    }
+}
+
+async function logSearchHistory(query, mode, totalCount) {
+    if (!supabase) return;
+    try {
+        let keywords = [];
+        if (query.includes(',')) {
+            keywords = query.split(',').map(k => k.trim()).filter(k => k);
+        } else {
+            keywords = query.split(' ').map(k => k.trim()).filter(k => k);
+        }
+
+        await supabase
+            .from('search_history')
+            .insert([{
+                full_query: query,
+                keywords: keywords,
+                search_mode: mode,
+                results_count: totalCount
+            }]);
+    } catch (err) {
+        console.error('❌ Failed to log search history:', err);
     }
 }
 
