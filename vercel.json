@@ -7,17 +7,9 @@
             "config": {
                 "distDir": "dist"
             }
-        },
-        {
-            "src": "web_backend/main.py",
-            "use": "@vercel/python"
         }
     ],
     "rewrites": [
-        {
-            "source": "/api/(.*)",
-            "destination": "web_backend/main.py"
-        },
         {
             "source": "/((?!api/).*)",
             "destination": "/index.html"
