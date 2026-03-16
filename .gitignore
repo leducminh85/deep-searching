@@ -57,7 +57,7 @@ Thumbs.db
 *.log
 *.sqlite3
 *.xlsx
-*.json
+# *.json - Removed so package.json etc. can be tracked
 *.txt
 !requirements.txt
 check_bug.py

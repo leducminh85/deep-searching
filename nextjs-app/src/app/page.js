@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Sun, Moon, Highlighter } from 'lucide-react';
-import DataTable from '@/components/DataTable';
+import DataTable from '../components/DataTable';
 
 export default function HomePage() {
   const [theme, setTheme] = useState('dark');
