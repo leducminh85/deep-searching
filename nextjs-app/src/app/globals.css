@@ -432,13 +432,27 @@ th {
 }
 
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
   to {
     transform: rotate(360deg);
   }
+}
+
+.loading-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  color: var(--primary-color);
+  font-weight: 600;
+  font-size: 0.875rem;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.loader.small {
+  width: 1rem;
+  height: 1rem;
+  border-width: 2px;
 }
 
 /* Dark Mode Toggle Button class */
