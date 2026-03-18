@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, LogOut } from 'lucide-react';
 import AdminPage from '../../components/AdminPage';
 
 export default function AdminPageRoute() {
@@ -23,6 +23,17 @@ export default function AdminPageRoute() {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   };
 
+  const handleLogout = async () => {
+    try {
+      const res = await fetch('/api/auth/logout', { method: 'POST' });
+      if (res.ok) {
+        window.location.href = '/login';
+      }
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+  };
+
   return (
     <div className="container">
       <header className="header">
@@ -34,6 +45,9 @@ export default function AdminPageRoute() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <button className="theme-toggle" onClick={toggleTheme} title="Đổi giao diện">
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+          </button>
+          <button className="theme-toggle" onClick={handleLogout} title="Đăng xuất" style={{ color: 'var(--accent-color)', borderColor: 'rgba(244, 63, 94, 0.2)' }}>
+            <LogOut size={20} />
           </button>
         </div>
       </header>
