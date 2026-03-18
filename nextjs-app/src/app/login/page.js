@@ -26,15 +26,19 @@ export default function LoginPage() {
         
         // Setup responsive size
         const container = canvasRef.current.parentElement;
-        let width = container.clientWidth;
+        let containerWidth = container.clientWidth;
         
-        if (width === 0) {
+        if (containerWidth === 0) {
             resizeTimeout = setTimeout(initGlobe, 100);
             return;
         }
 
-        // Cobe renders in a square
-        const size = Math.min(width * 1.5, 900); // Scale up slightly to overflow bounds gracefully
+        // Calculate a square size so it gracefully overflows the container
+        const size = Math.max(containerWidth * 1.3, 800); 
+
+        // Force exactly square dimensions on the canvas to prevent any CSS stretch/squish
+        canvasRef.current.style.width = `${size}px`;
+        canvasRef.current.style.height = `${size}px`;
 
         if (globe) globe.destroy();
 
@@ -64,6 +68,10 @@ export default function LoginPage() {
                 phi += 0.003;
             }
             state.phi = phi + pointerInteractionMovement.current;
+            
+            // Critical for perfectly round globe without ellipsis distortion
+            state.width = size * 2;
+            state.height = size * 2;
           }
         });
     }
@@ -284,9 +292,8 @@ export default function LoginPage() {
         }
 
         .cobe-canvas {
-          width: 130%; 
-          aspect-ratio: 1/1;
-          height: auto;
+          /* width and height are set dynamically in JS */
+          flex-shrink: 0; /* Prevents flexbox from squishing the canvas into an oval */
           cursor: grab;
           transition: opacity 1s ease;
           transform: translateY(5%); 
