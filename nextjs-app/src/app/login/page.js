@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowRight } from 'lucide-react';
+import createGlobe from 'cobe';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -9,6 +11,77 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const canvasRef = useRef(null);
+  
+  const pointerInteracting = useRef(null);
+  const pointerInteractionMovement = useRef(0);
+
+  useEffect(() => {
+    let phi = 4.8; // Starting angle (Asia)
+    let globe;
+    let resizeTimeout;
+
+    const initGlobe = () => {
+        if (!canvasRef.current) return;
+        
+        // Setup responsive size
+        const container = canvasRef.current.parentElement;
+        let width = container.clientWidth;
+        
+        if (width === 0) {
+            resizeTimeout = setTimeout(initGlobe, 100);
+            return;
+        }
+
+        // Cobe renders in a square
+        const size = Math.min(width * 1.5, 900); // Scale up slightly to overflow bounds gracefully
+
+        if (globe) globe.destroy();
+
+        globe = createGlobe(canvasRef.current, {
+          devicePixelRatio: 2,
+          width: size * 2, // Multiply by 2 for retina crispness
+          height: size * 2,
+          phi: 4.8,
+          theta: 0.25,
+          dark: 1, // Dark mode
+          diffuse: 1.2, // Light diffusion
+          mapSamples: 24000, // Dot density
+          mapBrightness: 8,
+          baseColor: [0.08, 0.08, 0.25], // Deep space blue/purple
+          markerColor: [0.957, 0.247, 0.365], // Rose/Pink markers
+          glowColor: [0.15, 0.15, 0.35], // Outer glow
+          markers: [
+            { location: [21.0285, 105.8542], size: 0.08 }, // Hanoi
+            { location: [10.7626, 106.6602], size: 0.08 }, // HCM
+            { location: [35.6895, 139.6917], size: 0.05 }, // Tokyo
+            { location: [37.7749, -122.4194], size: 0.05 }, // SF
+            { location: [51.5074, -0.1278], size: 0.04 }   // London
+          ],
+          onRender: (state) => {
+            // Auto-rotate if not being dragged
+            if (pointerInteracting.current === null) {
+                phi += 0.003;
+            }
+            state.phi = phi + pointerInteractionMovement.current;
+          }
+        });
+    }
+
+    initGlobe();
+
+    const onResize = () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(initGlobe, 200);
+    };
+    window.addEventListener('resize', onResize);
+
+    return () => {
+      if (globe) globe.destroy();
+      clearTimeout(resizeTimeout);
+      window.removeEventListener('resize', onResize);
+    }
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -40,61 +113,372 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-      <div className="admin-card" style={{ maxWidth: '400px', width: '100%' }}>
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <img src="/logo.png" alt="Logo" style={{ width: '64px', height: '64px', borderRadius: '16px', marginBottom: '1rem' }} />
-          <h2 style={{ fontSize: '1.75rem', fontWeight: '700', marginBottom: '0.5rem' }}>Đăng nhập</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Chào mừng bạn quay trở lại</p>
+    <div className="login-wrapper">
+      {/* Background Decor */}
+      <div className="bg-glow bg-glow-1"></div>
+      <div className="bg-glow bg-glow-2"></div>
+      
+      <div className="login-main">
+        {/* Left Side: Branding with Earth Globe */}
+        <div className="login-left">
+          <div className="globe-container">
+            <canvas 
+              ref={canvasRef} 
+              className="cobe-canvas"
+              onPointerDown={(e) => {
+                pointerInteracting.current = e.clientX - pointerInteractionMovement.current;
+                e.target.style.cursor = 'grabbing';
+              }}
+              onPointerUp={(e) => {
+                pointerInteracting.current = null;
+                e.target.style.cursor = 'grab';
+              }}
+              onPointerOut={(e) => {
+                pointerInteracting.current = null;
+                e.target.style.cursor = 'grab';
+              }}
+              onPointerMove={(e) => {
+                if (pointerInteracting.current !== null) {
+                  const delta = e.clientX - pointerInteracting.current;
+                  pointerInteractionMovement.current = delta / 180; // Slower drag for realism
+                }
+              }}
+            />
+          </div>
+          <div className="brand-content">
+            <div className="logo-wrapper-large">
+              <img src="/logo.png" alt="Logo" />
+            </div>
+            <h1 className="brand-title">Wevic</h1>
+            <p className="brand-subtitle">Deep Video Search Engine</p>
+          </div>
         </div>
 
-        <form onSubmit={handleLogin}>
-          <div className="form-group">
-            <label>Email</label>
-            <input
-              type="email"
-              placeholder="email@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label>Mật khẩu</label>
-            <input
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-
-          {error && (
-            <div style={{ 
-              color: 'var(--accent-color)', 
-              fontSize: '0.875rem', 
-              marginBottom: '1.5rem', 
-              textAlign: 'center',
-              background: 'rgba(244, 63, 94, 0.1)',
-              padding: '0.75rem',
-              borderRadius: '8px',
-              border: '1px solid rgba(244, 63, 94, 0.2)'
-            }}>
-              {error}
+        {/* Right Side: Login Form */}
+        <div className="login-right">
+          <div className="login-form-container">
+            <div className="form-header">
+              <h2>Đăng nhập</h2>
+              <p>Vui lòng nhập thông tin để truy cập</p>
             </div>
-          )}
 
-          <button 
-            type="submit" 
-            className="btn" 
-            disabled={loading}
-            style={{ width: '100%', justifyContent: 'center', padding: '0.875rem' }}
-          >
-            {loading ? 'Đang xác thực...' : 'Đăng nhập ngay'}
-          </button>
-        </form>
+            <form onSubmit={handleLogin} className="login-form">
+              <div className="form-group-modern">
+                <label>Email</label>
+                <input
+                  type="email"
+                  placeholder="name@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group-modern">
+                <label>Mật khẩu</label>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+
+              {error && (
+                <div className="login-error">
+                  {error}
+                </div>
+              )}
+
+              <button 
+                type="submit" 
+                className="login-btn-premium" 
+                disabled={loading}
+              >
+                {loading ? (
+                  'Đang xử lý...'
+                ) : (
+                  <>
+                    <span>Đăng nhập ngay</span>
+                    <ArrowRight size={18} />
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
       </div>
+
+      <style jsx>{`
+        .login-wrapper {
+          min-height: 100vh;
+          background: #020617;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          position: relative;
+          color: white;
+          font-family: var(--font-inter, 'Inter', sans-serif);
+        }
+
+        .bg-glow {
+          position: absolute;
+          width: 60vh;
+          height: 60vh;
+          border-radius: 50%;
+          filter: blur(100px);
+          opacity: 0.12;
+          z-index: 0;
+        }
+        .bg-glow-1 {
+          top: -15%;
+          left: -10%;
+          background: #6366f1;
+        }
+        .bg-glow-2 {
+          bottom: -15%;
+          right: -10%;
+          background: #f43f5e;
+        }
+
+        .login-main {
+          display: flex;
+          width: 100%;
+          max-width: 1050px;
+          min-height: 620px;
+          background: rgba(15, 23, 42, 0.6);
+          backdrop-filter: blur(25px);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 32px;
+          overflow: hidden;
+          z-index: 1;
+          box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.7);
+          margin: 1.5rem;
+        }
+
+        /* Left Branding Section */
+        .login-left {
+          flex: 1.1;
+          background: linear-gradient(145deg, rgba(99, 102, 241, 0.08) 0%, rgba(244, 63, 94, 0.03) 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 4rem;
+          border-right: 1px solid rgba(255, 255, 255, 0.04);
+          position: relative;
+        }
+
+        .globe-container {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 0;
+          overflow: hidden;
+          opacity: 0.85; /* Blend globe gracefully into background */
+        }
+
+        .cobe-canvas {
+          width: 130%; 
+          aspect-ratio: 1/1;
+          height: auto;
+          cursor: grab;
+          transition: opacity 1s ease;
+          transform: translateY(5%); 
+          /* Smooth soft edges using Webkit Mask */
+          mask-image: radial-gradient(circle at center, black 50%, rgba(0,0,0,0.5) 75%, transparent 100%);
+          -webkit-mask-image: radial-gradient(circle at center, black 50%, rgba(0,0,0,0.5) 75%, transparent 100%);
+        }
+
+        .brand-content {
+          text-align: center;
+          max-width: 400px;
+          z-index: 1;
+          pointer-events: none; /* Allows mouse to pass through to the rotating globe */
+        }
+
+        .logo-wrapper-large {
+          width: 110px;
+          height: 110px;
+          margin: 0 auto 2rem;
+          background: rgba(255, 255, 255, 0.03);
+          padding: 24px;
+          border-radius: 28px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+          backdrop-filter: blur(10px);
+        }
+        .logo-wrapper-large img {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+        }
+        
+        .brand-title {
+          font-size: 3.5rem;
+          font-weight: 800;
+          margin: 0;
+          background: linear-gradient(to right, #ffffff, #94a3b8);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          letter-spacing: -2px;
+          line-height: 1;
+        }
+
+        .brand-subtitle {
+          font-size: 1.25rem;
+          color: #94a3b8;
+          margin: 0.75rem 0 3rem;
+          font-weight: 500;
+        }
+
+        /* Right Form Section */
+        .login-right {
+          flex: 0.9;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 4rem;
+          background: rgba(15, 23, 42, 0.2);
+        }
+
+        .login-form-container {
+          width: 100%;
+          max-width: 360px;
+        }
+
+        .form-header {
+          margin-bottom: 3rem;
+          text-align: center;
+        }
+
+        .form-header h2 {
+          font-size: 2.25rem;
+          font-weight: 800;
+          margin-bottom: 0.75rem;
+          letter-spacing: -0.5px;
+        }
+
+        .form-header p {
+          color: #94a3b8;
+          font-size: 0.9375rem;
+        }
+
+        .login-form {
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+        }
+
+        .form-group-modern {
+          display: flex;
+          flex-direction: column;
+          gap: 0.6rem;
+        }
+
+        .form-group-modern label {
+          font-size: 0.8125rem;
+          font-weight: 700;
+          color: #94a3b8;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          padding-left: 4px;
+        }
+
+        .form-group-modern input {
+          width: 100%;
+          background: rgba(0, 0, 0, 0.25);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 14px;
+          padding: 1rem 1.25rem;
+          color: white;
+          font-size: 1rem;
+          transition: all 0.2s ease;
+        }
+
+        .form-group-modern input:focus {
+          border-color: #6366f1;
+          background: rgba(0, 0, 0, 0.4);
+          outline: none;
+          box-shadow: 0 0 0 1px #6366f1, 0 0 20px rgba(99, 102, 241, 0.15);
+        }
+
+        .login-error {
+          background: rgba(244, 63, 94, 0.08);
+          color: #fda4af;
+          padding: 1rem;
+          border-radius: 12px;
+          font-size: 0.875rem;
+          text-align: center;
+          border: 1px solid rgba(244, 63, 94, 0.2);
+          animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        @keyframes shake {
+          10%, 90% { transform: translate3d(-1px, 0, 0); }
+          20%, 80% { transform: translate3d(2px, 0, 0); }
+          30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+          40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+
+        .login-btn-premium {
+          width: 100%;
+          background: #ffffff;
+          color: #020617;
+          border: none;
+          padding: 1.125rem;
+          border-radius: 14px;
+          font-weight: 800;
+          font-size: 1.0625rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.75rem;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          margin-top: 1rem;
+          box-shadow: 0 10px 25px -5px rgba(255, 255, 255, 0.1);
+        }
+
+        .login-btn-premium:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 20px 30px -10px rgba(255, 255, 255, 0.2);
+          background: #f8fafc;
+        }
+
+        .login-btn-premium:active {
+          transform: translateY(-1px);
+        }
+
+        .login-btn-premium:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: none;
+        }
+
+        @media (max-width: 900px) {
+          .login-main {
+            flex-direction: column;
+            min-height: auto;
+            max-width: 500px;
+          }
+          .login-left {
+            padding: 3rem 2rem;
+            border-right: none;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+          }
+          .brand-title { font-size: 2.5rem; }
+          .login-right {
+            padding: 3rem 2rem;
+          }
+        }
+      `}</style>
     </div>
   );
 }
