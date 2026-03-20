@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
-import supabase from '../../../lib/supabase';
+import { createClient } from '../../../utils/supabase/server';
 
 export async function GET() {
-    if (!supabase) {
-        return NextResponse.json([]);
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
     try {
         // 1. Ưu tiên đọc từ View 'unique_channels' (Giải pháp cho dữ liệu vô hạn)
         // View này phải được tạo bằng SQL trong Supabase Dashboard
