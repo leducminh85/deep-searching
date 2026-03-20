@@ -907,7 +907,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
 
                     <button
                         onClick={toggleFilter}
-                        className={`theme-toggle ${isFilterOpen ? 'active' : ''}`}
+                        className={`theme-toggle tour-filter ${isFilterOpen ? 'active' : ''}`}
                         title="Bộ lọc nâng cao"
                     >
                         <Filter size={20} />
