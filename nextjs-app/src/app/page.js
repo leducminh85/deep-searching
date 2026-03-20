@@ -3,13 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Sun, Moon, Highlighter, LogOut } from 'lucide-react';
+import { Sun, Moon, Highlighter, LogOut, Languages } from 'lucide-react';
 import DataTable from '../components/DataTable';
 
 export default function HomePage() {
   const [theme, setTheme] = useState('dark');
   const [highlightEnabled, setHighlightEnabled] = useState(true);
   const [searchMode, setSearchMode] = useState('or');
+  const [translateEnabled, setTranslateEnabled] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('theme') || 'dark';
@@ -81,6 +82,17 @@ export default function HomePage() {
           >
             <Highlighter size={20} />
           </button>
+          <button
+            className="theme-toggle"
+            onClick={() => setTranslateEnabled(!translateEnabled)}
+            title={translateEnabled ? "Tắt Dịch Phân Tích" : "Bật Dịch Phân Tích (Hover 2s)"}
+            style={{
+              color: translateEnabled ? '#10b981' : 'inherit',
+              borderColor: translateEnabled ? '#10b981' : 'var(--glass-border)'
+            }}
+          >
+            <Languages size={20} />
+          </button>
           <button className="theme-toggle" onClick={toggleTheme} title="Đổi giao diện">
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
@@ -91,7 +103,11 @@ export default function HomePage() {
       </header>
 
       <main>
-        <DataTable highlightEnabled={highlightEnabled} searchMode={searchMode} />
+        <DataTable 
+          highlightEnabled={highlightEnabled} 
+          searchMode={searchMode} 
+          translateEnabled={translateEnabled} 
+        />
       </main>
     </div>
   );
