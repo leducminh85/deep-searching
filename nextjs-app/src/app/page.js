@@ -13,15 +13,35 @@ export default function HomePage() {
   const [translateEnabled, setTranslateEnabled] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('theme') || 'dark';
-    setTheme(saved);
-    document.documentElement.setAttribute('data-theme', saved);
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    const savedHighlight = localStorage.getItem('highlightEnabled');
+    const savedSearchMode = localStorage.getItem('searchMode');
+    const savedTranslate = localStorage.getItem('translateEnabled');
+
+    setTheme(savedTheme);
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    
+    if (savedHighlight !== null) setHighlightEnabled(savedHighlight === 'true');
+    if (savedSearchMode) setSearchMode(savedSearchMode);
+    if (savedTranslate !== null) setTranslateEnabled(savedTranslate === 'true');
   }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('highlightEnabled', highlightEnabled);
+  }, [highlightEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('searchMode', searchMode);
+  }, [searchMode]);
+
+  useEffect(() => {
+    localStorage.setItem('translateEnabled', translateEnabled);
+  }, [translateEnabled]);
 
   const toggleTheme = () => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
