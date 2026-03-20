@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Youtube, ArrowUp, Search, Filter, X, Plus } from 'lucide-react';
+import { Youtube, ArrowUp, Search, Filter, X, Plus, Languages } from 'lucide-react';
 
 
 const removeAccents = (str) => {
@@ -59,7 +59,7 @@ const Highlight = ({ text, searches, enabled }) => {
     );
 };
 
-const DataTable = ({ highlightEnabled, searchMode }) => {
+const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
 
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -104,6 +104,57 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
     const [isSubmittingChannel, setIsSubmittingChannel] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [urlError, setUrlError] = useState('');
+
+    // Translation state
+    const hoverTimeoutRef = useRef(null);
+    const [activeTranslation, setActiveTranslation] = useState(null);
+
+    const extractMainStory = (summary) => {
+        if (!summary || typeof summary !== 'string') return "";
+        // Match 1. MAIN STORY: ... until 2. or end
+        const patterns = [
+            /(?:MAIN STORY|Main Story|1\.\s*MAIN STORY):\s*([\s\S]+?)(?=\n\d\.|\n\*\*|$)/i,
+            /\*\*1\.\s*MAIN STORY:\*\*\s*([\s\S]+?)(?=\n\d\.|\n\*\*|$)/i
+        ];
+        for (const pattern of patterns) {
+            const match = summary.match(pattern);
+            if (match) return match[1].trim();
+        }
+        return summary//.trim().substring(0, 500); // Fallback to first 500 chars
+    };
+
+    const handleMouseEnterSummary = (summary, mouseX, mouseY) => {
+        if (!translateEnabled || !summary) return;
+
+        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+
+        hoverTimeoutRef.current = setTimeout(async () => {
+            const mainStory = extractMainStory(summary);
+            setActiveTranslation({ loading: true, x: mouseX, y: mouseY });
+
+            try {
+                // Fetch translation directly from Google Translate free client (Frontend)
+                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&q=${encodeURIComponent(mainStory)}`;
+                const res = await fetch(url);
+                if (res.ok) {
+                    const data = await res.json();
+                    const translatedText = data[0].map(segment => segment[0]).join('');
+                    setActiveTranslation({ content: translatedText, x: mouseX, y: mouseY });
+                }
+            } catch (err) {
+                console.error("Translation failed on frontend", err);
+                setActiveTranslation(null);
+            }
+        }, 1000);
+    };
+
+    const handleMouseLeaveSummary = () => {
+        if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+        }
+        setActiveTranslation(null);
+    };
 
     // Gọi fetch khi trang, từ khóa hoặc sắp xếp thay đổi
     useEffect(() => {
@@ -575,6 +626,21 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
             }
         }
 
+        if (lowerHeader === 'summary' || header === 'Phân tích') {
+            return (
+                <div
+                    onMouseEnter={(e) => {
+                        const x = e.clientX;
+                        const y = e.clientY;
+                        handleMouseEnterSummary(value, x, y);
+                    }}
+                    onMouseLeave={handleMouseLeaveSummary}
+                >
+                    <Highlight text={value} searches={appliedTags} enabled={highlightEnabled} />
+                </div>
+            );
+        }
+
         return <Highlight text={value} searches={appliedTags} enabled={highlightEnabled} />;
     };
 
@@ -967,9 +1033,9 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
                                     disabled={isSubmittingChannel}
                                 />
                                 {urlError && (
-                                    <div style={{ 
-                                        color: '#f43f5e', 
-                                        fontSize: '0.75rem', 
+                                    <div style={{
+                                        color: '#f43f5e',
+                                        fontSize: '0.75rem',
                                         marginTop: '0.5rem',
                                         display: 'flex',
                                         alignItems: 'center',
@@ -1020,8 +1086,8 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
                             <p style={{ color: 'var(--text-muted)', lineHeight: '1.6', fontSize: '0.95rem' }}>
                                 Cảm ơn bạn! Kênh nguồn đã được ghi nhận vào hệ thống và sẽ được cập nhật sau ít ngày.
                             </p>
-                            <button 
-                                className="modal-btn-confirm" 
+                            <button
+                                className="modal-btn-confirm"
                                 style={{ marginTop: '2rem', width: '100%' }}
                                 onClick={() => setShowSuccessModal(false)}
                             >
@@ -1029,6 +1095,45 @@ const DataTable = ({ highlightEnabled, searchMode }) => {
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {activeTranslation && (
+                <div
+                    className="translation-popover"
+                    style={{
+                        position: 'fixed',
+                        top: activeTranslation.y + 350 > (typeof window !== 'undefined' ? window.innerHeight : 0)
+                            ? activeTranslation.y - 330 // Shift up if it hits bottom
+                            : activeTranslation.y + 15,
+                        left: activeTranslation.x + 340 > (typeof window !== 'undefined' ? window.innerWidth : 0)
+                            ? activeTranslation.x - 330 // Show on the left of mouse if it hits right edge
+                            : activeTranslation.x + 15,
+                        width: '320px',
+                        padding: '1.25rem',
+                        background: 'var(--glass-bg)',
+                        backdropFilter: 'blur(30px)',
+                        border: '1px solid var(--primary-color)',
+                        borderRadius: '20px',
+                        boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
+                        zIndex: 10001,
+                        color: 'var(--text-color)',
+                        fontSize: '0.9375rem',
+                        lineHeight: '1.7',
+                        animation: 'popoverFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                        pointerEvents: 'none'
+                    }}
+                >
+                    {activeTranslation.loading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '0.5rem 0' }}>
+                            <div className="loader small" style={{ width: '20px', height: '20px' }}></div>
+                            <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>Đang dịch thuật AI...</span>
+                        </div>
+                    ) : (
+                        <div style={{ whiteSpace: 'pre-wrap' }}>
+                            {activeTranslation.content}
+                        </div>
+                    )}
                 </div>
             )}
         </>
