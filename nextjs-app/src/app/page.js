@@ -19,39 +19,45 @@ export default function HomePage() {
   const tourSteps = [
     {
       target: '.tour-search-mode',
-      title: 'Bước 1/6: Chế độ Tìm kiếm',
+      title: 'Bước 1/7: Chế độ Tìm kiếm',
       content: 'Chuyển đổi chế độ tìm kiếm: Một trong (OR) hoặc Tất cả (AND).',
       disableBeacon: true,
       disableScrolling: true,
     },
     {
       target: '.tour-highlight',
-      title: 'Bước 2/6: Nổi bật Từ khóa',
+      title: 'Bước 2/7: Nổi bật Từ khóa',
       content: 'Bật/tắt tính năng làm nổi bật từ khóa trong kết quả',
       disableScrolling: true,
     },
     {
       target: '.tour-translate',
-      title: 'Bước 3/6: Dịch Phân tích',
+      title: 'Bước 3/7: Dịch Phân tích',
       content: 'Bật dịch Cốt truyện. Hãy bật lên và trỏ chuột vào cột phân tích của video.',
       disableScrolling: true,
     },
     {
       target: '.tour-theme',
-      title: 'Bước 4/6: Giao diện Tùy chỉnh',
+      title: 'Bước 4/7: Giao diện Tùy chỉnh',
       content: 'Đổi màu nền sáng/tối.',
       disableScrolling: true,
     },
     {
       target: '.search-input',
-      title: 'Bước 5/6: Nhập Tìm kiếm',
+      title: 'Bước 5/7: Nhập Tìm kiếm',
       content: 'Nhập từ khóa và nhấn Enter (hoặc phẩy) để gộp nhiều từ khóa tìm kiếm.',
       disableScrolling: true,
     },
     {
       target: '.tour-filter',
-      title: 'Bước 6/6: Bộ lọc Nâng cao',
+      title: 'Bước 6/7: Bộ lọc Nâng cao',
       content: 'Lọc kết quả nâng cao.',
+      disableScrolling: true,
+    },
+    {
+      target: '.tour-add-channel',
+      title: 'Bước 7/7: Thêm Kênh mới',
+      content: 'Gửi yêu cầu thêm kênh YouTube mới vào hệ thống.',
       disableScrolling: true,
     }
   ];

@@ -1003,7 +1003,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
                     <ArrowUp size={24} />
                 </button>
                 <button
-                    className="floating-btn"
+                    className="floating-btn tour-add-channel"
                     onClick={() => setIsAddChannelOpen(true)}
                     title="Thêm kênh nguồn"
                 >
