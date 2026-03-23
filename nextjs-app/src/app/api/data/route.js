@@ -1,11 +1,17 @@
 import { NextResponse } from 'next/server';
-import supabase from '../../../lib/supabase';
+import { createClient } from '../../../utils/supabase/server';
 
 // Global cache for data (only small subset)
 let _cachedData = null;
 
 export async function GET(request) {
     try {
+        const supabase = await createClient();
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const { searchParams } = new URL(request.url);
         const query = searchParams.get('q') || null;
         const page = parseInt(searchParams.get('page') || '1', 10);
@@ -19,7 +25,7 @@ export async function GET(request) {
         const endDate = searchParams.get('end_date') || null;
         const channels = searchParams.get('channels') || null;
 
-        const [data, total, errorInfo] = await getDataInternal(query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels);
+        const [data, total, errorInfo] = await getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels);
         if (errorInfo) {
             return NextResponse.json({ detail: errorInfo, data: [], total: 0 }, { status: 500 });
         }
@@ -32,7 +38,7 @@ export async function GET(request) {
 
         // Background logging for search history (don't await to keep response fast)
         if (page === 1 && query && query.trim()) {
-            logSearchHistory(query, mode, total);
+            logSearchHistory(supabase, query, mode, total);
         }
 
         return response;
@@ -41,7 +47,7 @@ export async function GET(request) {
     }
 }
 
-async function logSearchHistory(query, mode, totalCount) {
+async function logSearchHistory(supabase, query, mode, totalCount) {
     if (!supabase) return;
     try {
         let keywords = [];
@@ -64,7 +70,7 @@ async function logSearchHistory(query, mode, totalCount) {
     }
 }
 
-async function getDataInternal(query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels) {
+async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels) {
     const columnMap = {
         'title': 'title', 'url': 'url', 'link': 'url', 'views': 'views',
         'date_published': 'date_published', 'date published': 'date_published',

@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
-import supabase from '../../../lib/supabase';
+import { createClient } from '../../../utils/supabase/server';
 
 export async function POST(request) {
-    if (!supabase) {
-        return NextResponse.json({ error: 'Supabase client not initialized' }, { status: 500 });
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     try {
