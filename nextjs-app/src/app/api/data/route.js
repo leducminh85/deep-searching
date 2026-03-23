@@ -38,7 +38,7 @@ export async function GET(request) {
 
         // Background logging for search history (don't await to keep response fast)
         if (page === 1 && query && query.trim()) {
-            logSearchHistory(supabase, query, mode, total);
+            logSearchHistory(supabase, query, mode, total, user?.email);
         }
 
         return response;
@@ -47,7 +47,7 @@ export async function GET(request) {
     }
 }
 
-async function logSearchHistory(supabase, query, mode, totalCount) {
+async function logSearchHistory(supabase, query, mode, totalCount, email) {
     if (!supabase) return;
     try {
         let keywords = [];
@@ -63,7 +63,8 @@ async function logSearchHistory(supabase, query, mode, totalCount) {
                 full_query: query,
                 keywords: keywords,
                 search_mode: mode,
-                results_count: totalCount
+                results_count: totalCount,
+                user_email: email
             }]);
     } catch (err) {
         console.error('❌ Failed to log search history:', err);
