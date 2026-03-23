@@ -134,6 +134,7 @@ export default function HomePage() {
         continuous={true}
         showSkipButton={false}
         showProgress={false}
+        hideCloseButton={true}
         disableOverlayClose={true}
         disableCloseOnEsc={true}
         disableScrollParentFix={true}
