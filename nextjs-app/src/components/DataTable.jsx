@@ -69,7 +69,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
     const [searchTags, setSearchTags] = useState([]);
     const [appliedTags, setAppliedTags] = useState([]);
     const [appliedFilters, setAppliedFilters] = useState({});
-    const [isInitialized, setIsInitialized] = useState(false);
+    const [isInitialized, setIsInitialized] = useState(true);
     const abortControllerRef = useRef(null);
     const progressIntervalRef = useRef(null);
     const [inputValue, setInputValue] = useState('');
@@ -158,10 +158,9 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
 
     // Gọi fetch khi trang, từ khóa hoặc sắp xếp thay đổi
     useEffect(() => {
-        if (!isInitialized) return;
         const query = appliedTags.join(',');
         fetchData(query, page, sortConfig, searchMode, appliedFilters);
-    }, [appliedTags, page, sortConfig, appliedFilters, isInitialized]);
+    }, [appliedTags, page, sortConfig, appliedFilters, searchMode]);
 
     // Lấy danh sách kênh khi component mount
     useEffect(() => {
@@ -175,13 +174,12 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
                 const data = await res.json();
                 setAvailableChannels(data);
                 setSelectedChannels(data);
-                // Đồng bộ hóa appliedFilters để hiển thị đúng ngay lập tức
-                setAppliedFilters(prev => ({ ...prev, selectedChannels: data }));
+                // No setAppliedFilters here to avoid redundant fetch on mount
             }
         } catch (err) {
             console.error("Failed to fetch channels", err);
         } finally {
-            setIsInitialized(true);
+            // Done
         }
     };
 
