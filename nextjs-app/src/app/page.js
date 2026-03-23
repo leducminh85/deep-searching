@@ -132,8 +132,10 @@ export default function HomePage() {
         steps={tourSteps}
         run={runTour}
         continuous={true}
-        showSkipButton={true}
+        showSkipButton={false}
         showProgress={false}
+        disableOverlayClose={true}
+        disableCloseOnEsc={true}
         disableScrollParentFix={true}
         callback={handleJoyrideCallback}
         styles={{
@@ -157,7 +159,6 @@ export default function HomePage() {
           close: 'Đóng',
           last: 'Hoàn thành',
           next: 'Tiếp theo',
-          skip: 'Bỏ qua',
         }}
       />
       <header className="header">
