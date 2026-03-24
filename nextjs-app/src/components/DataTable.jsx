@@ -98,6 +98,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
     // Column resizing state
     const [columnWidths, setColumnWidths] = useState({});
     const resizingRef = useRef(null);
+    const isRequestPendingRef = useRef(false);
     const [isAddChannelOpen, setIsAddChannelOpen] = useState(false);
     const [newChannelUrl, setNewChannelUrl] = useState('');
     const [newChannelNote, setNewChannelNote] = useState('');
@@ -255,6 +256,8 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
                 setData(newData);
             } else {
                 setData(prev => [...prev, ...newData]);
+                // Tự động tăng số dòng hiển thị một chút khi có dữ liệu mới để người dùng thấy ngay kết quả
+                setVisibleRows(prev => prev + 30);
             }
 
             setTotalResults(result.total || 0);
@@ -276,6 +279,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
             }
             setError(`${err.message}`);
         } finally {
+            isRequestPendingRef.current = false;
             if (signal.aborted) return;
             if (pageNum === 1) {
                 setTimeout(() => {
@@ -467,15 +471,16 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
             if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 800) {
                 if (visibleRows < sortedData.length) {
                     setVisibleRows(prev => Math.min(prev + 30, sortedData.length));
-                } else if (hasMore && !loading && !loadingMore) {
-                    // Đã hiển thị hết data hiện có, tải thêm từ server
+                } else if (hasMore && !loading && !loadingMore && !isRequestPendingRef.current) {
+                    // Synchronously lock the request to prevent double fetching
+                    isRequestPendingRef.current = true;
                     setPage(prev => prev + 1);
                 }
             }
         };
         window.addEventListener('scroll', handleAutoLoad);
         return () => window.removeEventListener('scroll', handleAutoLoad);
-    }, [visibleRows, sortedData.length, hasMore, loading, loadingMore]);
+    }, [visibleRows, sortedData.length, hasMore, loading, loadingMore, page]);
 
     const handleScroll = (e) => {
         const { scrollTop, clientHeight, scrollHeight } = e.target;
