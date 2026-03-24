@@ -160,7 +160,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
     useEffect(() => {
         const query = appliedTags.join(',');
         fetchData(query, page, sortConfig, searchMode, appliedFilters);
-    }, [appliedTags, page, sortConfig, appliedFilters, searchMode]);
+    }, [appliedTags, page, sortConfig, appliedFilters]);
 
     // Lấy danh sách kênh khi component mount
     useEffect(() => {
