@@ -100,9 +100,9 @@ async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrde
             .from('videos')
             .select('title,url,channel_name,views,date_published,thumbnail,caption,summary,created_at', { count: 'exact' });
 
-        // 1. Xử lý tìm kiếm từ khóa
-        let keywords = [];
+        // 1. Xử lý tìm kiếm từ khóa bằng Full-Text Search (FTS)
         if (query) {
+            let keywords = [];
             if (query.includes(',')) {
                 keywords = query.split(',').map(k => k.trim()).filter(k => k);
             } else {
@@ -110,24 +110,10 @@ async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrde
             }
 
             if (keywords.length > 0) {
-                const searchFields = ['title', 'summary', 'caption', 'channel_name'];
-                if (mode === 'and') {
-                    for (const kw of keywords) {
-                        const pattern = `%${kw}%`;
-                        builder = builder.or(searchFields.map(f => `${f}.ilike.${pattern}`).join(','));
-                    }
-                } else {
-                    const orConds = [];
-                    for (const kw of keywords) {
-                        const pattern = `%${kw}%`;
-                        for (const f of searchFields) {
-                            orConds.push(`${f}.ilike.${pattern}`);
-                        }
-                    }
-                    if (orConds.length > 0) {
-                        builder = builder.or(orConds.join(','));
-                    }
-                }
+                // Nối các keyword bằng & (AND) hoặc | (OR) tùy theo mode
+                const separator = mode === 'and' ? ' & ' : ' | ';
+                const ftsQuery = keywords.join(separator);
+                builder = builder.textSearch('fts', ftsQuery, { type: 'plain', config: 'simple' });
             }
         }
 
@@ -151,60 +137,17 @@ async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrde
             }
         }
 
-        let response;
-        try {
-            response = await builder
-                .order(dbSortColumn, { ascending: !isDescending })
-                .range(start, end);
-            
-            if (response.error) throw response.error;
-        } catch (e) {
-            console.error('❌ Data API Error:', e);
-            // Fallback nếu search timeout (giữ nguyên logic cũ: fallback về title/channel_name)
-            const errorMsg = String(e.message || e).toLowerCase();
-            const errorCode = e.code ? String(e.code) : '';
-            if (query && (errorMsg.includes('57014') || errorCode === '57014' || errorMsg.includes('timeout'))) {
-                console.log('⚠️ Search timeout detected. Fallback to Title/Channel only...');
-                builder = supabase
-                    .from('videos')
-                    .select('title,url,channel_name,views,date_published,thumbnail,caption,summary,created_at', { count: 'exact' });
+        // 3. Thực thi query với sort + pagination
+        const { data, count, error } = await builder
+            .order(dbSortColumn, { ascending: !isDescending })
+            .range(start, end);
 
-                // Áp dụng lại các filter nâng cao
-                if (minViews !== null) builder = builder.gte('views', minViews);
-                if (maxViews !== null) builder = builder.lte('views', maxViews);
-                if (startDate) builder = builder.gte('date_published', startDate);
-                if (endDate) builder = builder.lte('date_published', endDate);
-                if (channels) {
-                    const chanList = channels.split(',').map(c => c.trim()).filter(c => c);
-                    if (chanList.length > 0) builder = builder.in('channel_name', chanList);
-                }
-
-                const limitF = ['title', 'channel_name'];
-                if (mode === 'and') {
-                    for (const kw of keywords) {
-                        const pattern = `%${kw}%`;
-                        builder = builder.or(limitF.map(f => `${f}.ilike.${pattern}`).join(','));
-                    }
-                } else {
-                    const orC = [];
-                    for (const kw of keywords) {
-                        const pattern = `%${kw}%`;
-                        for (const f of limitF) orC.push(`${f}.ilike.${pattern}`);
-                    }
-                    if (orC.length > 0) builder = builder.or(orC.join(','));
-                }
-                response = await builder
-                    .order(dbSortColumn, { ascending: !isDescending })
-                    .range(start, end);
-                
-                if (response.error) throw response.error;
-            } else {
-                throw e;
-            }
+        if (error) {
+            throw error;
         }
 
-        const records = response.data || [];
-        const totalCount = response.count !== null && response.count !== undefined ? response.count : 0;
+        const records = data || [];
+        const totalCount = count !== null && count !== undefined ? count : 0;
         const formatted = records.map(r => ({
             'Title': r.title || '',
             'URL': r.url || '',
