@@ -59,7 +59,7 @@ const Highlight = ({ text, searches, enabled }) => {
     );
 };
 
-const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
+const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSearchEnabled }) => {
 
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -160,7 +160,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
     // Gọi fetch khi trang, từ khóa hoặc sắp xếp thay đổi
     useEffect(() => {
         const query = appliedTags.join(',');
-        fetchData(query, page, sortConfig, searchMode, appliedFilters);
+        fetchData(query, page, sortConfig, searchMode, appliedFilters, captionSearchEnabled);
     }, [appliedTags, page, sortConfig, appliedFilters]);
 
     // Lấy danh sách kênh khi component mount
@@ -184,7 +184,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
         }
     };
 
-    const fetchData = async (query = '', pageNum = 1, sort = sortConfig, mode = 'or', filters = {}) => {
+    const fetchData = async (query = '', pageNum = 1, sort = sortConfig, mode = 'or', filters = {}, captionSearch = false) => {
         // Chỉ abort request cũ khi tải trang 1 (tải lại từ đầu)
         if (pageNum === 1) {
             if (abortControllerRef.current) {
@@ -244,7 +244,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
                 filterParams += `&channels=${encodeURIComponent(filters.selectedChannels.join(','))}`;
             }
 
-            const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}&sort=${encodeURIComponent(sortParam)}&order=${orderParam}&mode=${mode}${filterParams}`;
+            const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}&sort=${encodeURIComponent(sortParam)}&order=${orderParam}&mode=${mode}${filterParams}&caption_search=${captionSearch ? '1' : '0'}`;
             const response = await fetch(url, { signal });
 
             if (!response.ok) throw new Error('Failed to fetch data');
@@ -421,7 +421,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
     };
 
     const headers = useMemo(() => {
-        return [
+        const allHeaders = [
             'Title',
             'URL',
             'Views',
@@ -431,7 +431,11 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
             'Date Published',
             'Channel Name'
         ];
-    }, []);
+        if (!captionSearchEnabled) {
+            return allHeaders.filter(h => h !== 'Caption');
+        }
+        return allHeaders;
+    }, [captionSearchEnabled]);
 
     useEffect(() => {
         // Initial fetch handled by the other useEffect depending on appliedTags
