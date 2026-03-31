@@ -24,8 +24,10 @@ export async function GET(request) {
         const startDate = searchParams.get('start_date') || null;
         const endDate = searchParams.get('end_date') || null;
         const channels = searchParams.get('channels') || null;
+        const captionSearchParam = searchParams.get('caption_search');
+        const captionSearch = captionSearchParam === null || captionSearchParam === '1';
 
-        const [data, total, errorInfo] = await getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels);
+        const [data, total, errorInfo] = await getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels, captionSearch);
         if (errorInfo) {
             return NextResponse.json({ detail: errorInfo, data: [], total: 0 }, { status: 500 });
         }
@@ -71,7 +73,7 @@ async function logSearchHistory(supabase, query, mode, totalCount, email) {
     }
 }
 
-async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels) {
+async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels, captionSearch) {
     const columnMap = {
         'title': 'title', 'url': 'url', 'link': 'url', 'views': 'views',
         'date_published': 'date_published', 'date published': 'date_published',
@@ -113,7 +115,9 @@ async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrde
                 // Nối các keyword bằng & (AND) hoặc | (OR) tùy theo mode
                 const separator = mode === 'and' ? ' & ' : ' | ';
                 const ftsQuery = keywords.join(separator);
-                builder = builder.textSearch('fts', ftsQuery, { type: 'plain', config: 'simple' });
+                // Chọn cột FTS dựa trên chế độ caption search
+                const ftsColumn = captionSearch ? 'fts' : 'fts_no_caption';
+                builder = builder.textSearch(ftsColumn, ftsQuery, { type: 'plain', config: 'simple' });
             }
         }
 

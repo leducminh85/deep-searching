@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Sun, Moon, Highlighter, LogOut, Languages } from 'lucide-react';
+import { Sun, Moon, Highlighter, LogOut, Languages, Captions } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import DataTable from '../components/DataTable';
 
@@ -14,6 +14,7 @@ export default function HomePage() {
   const [highlightEnabled, setHighlightEnabled] = useState(true);
   const [searchMode, setSearchMode] = useState('or');
   const [translateEnabled, setTranslateEnabled] = useState(false);
+  const [captionSearchEnabled, setCaptionSearchEnabled] = useState(true);
   const [runTour, setRunTour] = useState(false);
 
   const tourSteps = [
@@ -32,31 +33,37 @@ export default function HomePage() {
     },
     {
       target: '.tour-translate',
-      title: 'Bước 3/7: Dịch Phân tích',
+      title: 'Bước 3/8: Dịch Phân tích',
       content: 'Bật dịch Cốt truyện. Hãy bật lên và trỏ chuột vào cột phân tích của video.',
       disableScrolling: true,
     },
     {
+      target: '.tour-caption',
+      title: 'Bước 4/8: Tìm trong Phụ đề',
+      content: 'Bật để tìm kiếm mở rộng bao gồm nội dung phụ đề (caption). Khi tắt, cột phụ đề sẽ ẩn đi cho gọn bảng.',
+      disableScrolling: true,
+    },
+    {
       target: '.tour-theme',
-      title: 'Bước 4/7: Giao diện Tùy chỉnh',
+      title: 'Bước 5/8: Giao diện Tùy chỉnh',
       content: 'Đổi màu nền sáng/tối.',
       disableScrolling: true,
     },
     {
       target: '.search-input',
-      title: 'Bước 5/7: Nhập Tìm kiếm',
+      title: 'Bước 6/8: Nhập Tìm kiếm',
       content: 'Nhập từ khóa và nhấn Enter (hoặc phẩy) để gộp nhiều từ khóa tìm kiếm.',
       disableScrolling: true,
     },
     {
       target: '.tour-filter',
-      title: 'Bước 6/7: Bộ lọc Nâng cao',
+      title: 'Bước 7/8: Bộ lọc Nâng cao',
       content: 'Lọc kết quả nâng cao.',
       disableScrolling: true,
     },
     {
       target: '.tour-add-channel',
-      title: 'Bước 7/7: Thêm Kênh mới',
+      title: 'Bước 8/8: Thêm Kênh mới',
       content: 'Gửi yêu cầu thêm kênh YouTube mới vào hệ thống.',
       disableScrolling: true,
     }
@@ -67,6 +74,7 @@ export default function HomePage() {
     const savedHighlight = localStorage.getItem('highlightEnabled');
     const savedSearchMode = localStorage.getItem('searchMode');
     const savedTranslate = localStorage.getItem('translateEnabled');
+    const savedCaptionSearch = localStorage.getItem('captionSearchEnabled');
 
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
@@ -74,6 +82,7 @@ export default function HomePage() {
     if (savedHighlight !== null) setHighlightEnabled(savedHighlight === 'true');
     if (savedSearchMode) setSearchMode(savedSearchMode);
     if (savedTranslate !== null) setTranslateEnabled(savedTranslate === 'true');
+    if (savedCaptionSearch !== null) setCaptionSearchEnabled(savedCaptionSearch === 'true');
 
     const hasSeenTour = localStorage.getItem('hasSeenTour');
     if (!hasSeenTour) {
@@ -97,6 +106,10 @@ export default function HomePage() {
   useEffect(() => {
     localStorage.setItem('translateEnabled', translateEnabled);
   }, [translateEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('captionSearchEnabled', captionSearchEnabled);
+  }, [captionSearchEnabled]);
 
   const toggleTheme = () => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
@@ -211,6 +224,17 @@ export default function HomePage() {
           >
             <Languages size={20} />
           </button>
+          <button
+            className="theme-toggle tour-caption"
+            onClick={() => setCaptionSearchEnabled(!captionSearchEnabled)}
+            title={captionSearchEnabled ? "Tắt tìm trong Phụ đề" : "Bật tìm trong Phụ đề"}
+            style={{
+              color: captionSearchEnabled ? '#f59e0b' : 'inherit',
+              borderColor: captionSearchEnabled ? '#f59e0b' : 'var(--glass-border)'
+            }}
+          >
+            <Captions size={20} />
+          </button>
           <button className="theme-toggle tour-theme" onClick={toggleTheme} title="Đổi giao diện">
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
@@ -224,7 +248,8 @@ export default function HomePage() {
         <DataTable 
           highlightEnabled={highlightEnabled} 
           searchMode={searchMode} 
-          translateEnabled={translateEnabled} 
+          translateEnabled={translateEnabled}
+          captionSearchEnabled={captionSearchEnabled}
         />
       </main>
     </div>
