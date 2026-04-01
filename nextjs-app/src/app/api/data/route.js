@@ -73,7 +73,7 @@ async function logSearchHistory(supabase, query, mode, totalCount, email) {
     }
 }
 
-async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels, captionSearch) {
+export async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels, captionSearch) {
     const columnMap = {
         'title': 'title', 'url': 'url', 'link': 'url', 'views': 'views',
         'date_published': 'date_published', 'date published': 'date_published',
@@ -112,12 +112,16 @@ async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrde
             }
 
             if (keywords.length > 0) {
-                // Nối các keyword bằng & (AND) hoặc | (OR) tùy theo mode
-                const separator = mode === 'and' ? ' & ' : ' | ';
-                const ftsQuery = keywords.join(separator);
                 // Chọn cột FTS dựa trên chế độ caption search
                 const ftsColumn = captionSearch ? 'fts' : 'fts_no_caption';
-                builder = builder.textSearch(ftsColumn, ftsQuery, { type: 'plain', config: 'simple' });
+                
+                if (mode === 'and') {
+                    // AND: sử dụng plain (mặc định PostgREST/Postgres sẽ AND các từ lại)
+                    builder = builder.textSearch(ftsColumn, keywords.join(' '), { type: 'plain', config: 'simple' });
+                } else {
+                    // OR: sử dụng websearch để hỗ trợ toán tử OR giữa các từ
+                    builder = builder.textSearch(ftsColumn, keywords.join(' OR '), { type: 'websearch', config: 'simple' });
+                }
             }
         }
 
