@@ -59,12 +59,14 @@ const Highlight = ({ text, searches, enabled }) => {
     );
 };
 
-const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSearchEnabled }) => {
+const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSearchEnabled, initialData }) => {
 
-    const [data, setData] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [data, setData] = useState(initialData?.data || []);
+    const [loading, setLoading] = useState(!initialData?.data || initialData?.data.length === 0);
     const [progress, setProgress] = useState(0);
-    const [error, setError] = useState(null);
+    const [error, setError] = useState(initialData?.error || null);
+
+    const isFirstRun = useRef(true);
 
     const [searchTags, setSearchTags] = useState([]);
     const [appliedTags, setAppliedTags] = useState([]);
@@ -80,9 +82,9 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
     // Pagination state
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
-    const [totalResults, setTotalResults] = useState(0);
+    const [totalResults, setTotalResults] = useState(initialData?.total || 0);
     const [loadingMore, setLoadingMore] = useState(false);
-    const pageSize = 200; // Giảm xuống 200 để tối ưu RAM backend (512MB)
+    const pageSize = 50; // Set pageSize=50 để match với backend initial data. Nếu scroll page 2 sẽ nạp tiếp 50 rows
 
     // Advanced Filter state
     const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -160,6 +162,17 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
     // Gọi fetch khi trang, từ khóa hoặc sắp xếp thay đổi
     useEffect(() => {
         const query = appliedTags.join(',');
+        // Skip client fetch on first render if initialData is provided and we are on default view
+        if (isFirstRun.current && initialData?.data?.length > 0) {
+            isFirstRun.current = false;
+            if (page === 1 && !query && Object.keys(appliedFilters).length === 0) {
+                // Đã có từ SRR cho bản mặc định
+                setLoading(false);
+                return;
+            }
+        }
+        isFirstRun.current = false;
+
         fetchData(query, page, sortConfig, searchMode, appliedFilters, captionSearchEnabled);
     }, [appliedTags, page, sortConfig, appliedFilters]);
 
@@ -209,8 +222,8 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
             setProgress(0);
 
             // Giả lập tiến trình chạy từ 0 đến 60-80% trong 5 giây
-            const targetP = Math.floor(Math.random() * (80 - 60 + 1)) + 60;
-            const duration = 5000;
+            const targetP = Math.floor(Math.random() * (95 - 60 + 1)) + 60;
+            const duration = 2000;
             const step = 100;
             const increment = targetP / (duration / step);
 
@@ -231,7 +244,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         setError(null);
 
         try {
-            const sortParam = sort.key || 'created_at';
+            const sortParam = sort.key || 'date_published';
             const orderParam = sort.direction;
 
             // Build filter query params
@@ -431,11 +444,11 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
             'Date Published',
             'Channel Name'
         ];
-        if (!captionSearchEnabled) {
-            return allHeaders.filter(h => h !== 'Caption');
-        }
+        // if (!captionSearchEnabled) {
+        //     return allHeaders.filter(h => h !== 'Caption');
+        // }
         return allHeaders;
-    }, [captionSearchEnabled]);
+    }, []);
 
     useEffect(() => {
         // Initial fetch handled by the other useEffect depending on appliedTags
