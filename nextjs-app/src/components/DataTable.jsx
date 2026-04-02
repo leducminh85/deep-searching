@@ -112,6 +112,9 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
     const hoverTimeoutRef = useRef(null);
     const [activeTranslation, setActiveTranslation] = useState(null);
 
+    // Lightbox state
+    const [selectedThumbnail, setSelectedThumbnail] = useState(null);
+
     const extractMainStory = (summary) => {
         if (!summary || typeof summary !== 'string') return "";
         // Match 1. MAIN STORY: ... until 2. or end
@@ -180,6 +183,19 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
     useEffect(() => {
         fetchChannels();
     }, []);
+
+    // Handle Escape key to close lightbox
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                setSelectedThumbnail(null);
+            }
+        };
+        if (selectedThumbnail) {
+            window.addEventListener('keydown', handleKeyDown);
+        }
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedThumbnail]);
 
     const fetchChannels = async () => {
         try {
@@ -595,6 +611,20 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         return (match && match[7].length === 11) ? match[7] : null;
     };
 
+    const handleThumbnailClick = (src, row) => {
+        let largeSrc = src;
+        // If it's a YouTube thumbnail, try to get the highest resolution
+        if (src.includes('img.youtube.com')) {
+            const videoUrl = row['URL'] || row['url'] || row['Link'];
+            const videoId = getYouTubeID(videoUrl);
+            if (videoId) {
+                // Try maxresdefault for best quality
+                largeSrc = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+            }
+        }
+        setSelectedThumbnail(largeSrc);
+    };
+
     const renderCell = (header, value, row) => {
         const lowerHeader = header.toLowerCase();
 
@@ -613,7 +643,17 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                     <img
                         src={src}
                         alt="Thumbnail"
-                        style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', objectFit: 'cover', display: 'block' }}
+                        onClick={() => handleThumbnailClick(src, row)}
+                        style={{
+                            width: '100%',
+                            aspectRatio: '16/9',
+                            borderRadius: '4px',
+                            objectFit: 'cover',
+                            display: 'block',
+                            cursor: 'zoom-in',
+                            transition: 'transform 0.2s'
+                        }}
+                        className="thumbnail-img"
                         onError={(e) => { e.target.style.display = 'none'; }}
                     />
                 );
@@ -1154,6 +1194,78 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                             {activeTranslation.content}
                         </div>
                     )}
+                </div>
+            )}
+            {/* Lightbox Modal */}
+            {selectedThumbnail && (
+                <div
+                    className="modal-overlay lightbox-overlay"
+                    onClick={() => setSelectedThumbnail(null)}
+                    style={{ background: 'rgba(0, 0, 0, 0.9)' }}
+                >
+                    <div
+                        className="lightbox-container"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            position: 'relative',
+                            maxWidth: '90vw',
+                            maxHeight: '90vh',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            animation: 'popoverFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+                        }}
+                    >
+                        <button
+                            onClick={() => setSelectedThumbnail(null)}
+                            style={{
+                                position: 'absolute',
+                                top: '-40px',
+                                right: '-40px',
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'white',
+                                cursor: 'pointer',
+                                padding: '8px'
+                            }}
+                        >
+                            <X size={32} />
+                        </button>
+                        <img
+                            src={selectedThumbnail}
+                            alt="Large Thumbnail"
+                            style={{
+                                maxWidth: '100%',
+                                maxHeight: '90vh',
+                                borderRadius: '12px',
+                                boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+                                objectFit: 'contain'
+                            }}
+                            onLoad={(e) => {
+                                // Centralized check: if image is the 120px placeholder, move to next lower resolution
+                                if (e.target.naturalWidth === 120) {
+                                    const currentSrc = e.target.src;
+                                    if (currentSrc.includes('maxresdefault.jpg')) {
+                                        e.target.src = currentSrc.replace('maxresdefault.jpg', 'sddefault.jpg');
+                                    } else if (currentSrc.includes('sddefault.jpg')) {
+                                        e.target.src = currentSrc.replace('sddefault.jpg', 'hqdefault.jpg');
+                                    } else if (currentSrc.includes('hqdefault.jpg')) {
+                                        e.target.src = currentSrc.replace('hqdefault.jpg', 'mqdefault.jpg');
+                                    }
+                                }
+                            }}
+                            onError={(e) => {
+                                const currentSrc = e.target.src;
+                                if (currentSrc.includes('maxresdefault.jpg')) {
+                                    e.target.src = currentSrc.replace('maxresdefault.jpg', 'sddefault.jpg');
+                                } else if (currentSrc.includes('sddefault.jpg')) {
+                                    e.target.src = currentSrc.replace('sddefault.jpg', 'hqdefault.jpg');
+                                } else if (currentSrc.includes('hqdefault.jpg')) {
+                                    e.target.src = currentSrc.replace('hqdefault.jpg', 'mqdefault.jpg');
+                                }
+                            }}
+                        />
+                    </div>
                 </div>
             )}
         </>
