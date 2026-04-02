@@ -89,7 +89,7 @@ export async function getDataInternal(supabase, query, page, pageSize, sortBy, s
     const end = start + pageSize - 1;
 
     try {
-        const countOption = query ? 'planned' : 'exact';
+        const countOption = 'estimated';
         
         // ĐÃ THÊM LẠI CAPTION VÀ SUMMARY VÀO LỆNH SELECT
         let builder = supabase
