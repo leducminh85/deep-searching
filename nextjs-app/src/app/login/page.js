@@ -112,12 +112,13 @@ export default function LoginPage() {
       if (res.ok) {
         router.push('/');
         router.refresh();
+        // Do NOT set loading to false here, let it transition to home page
       } else {
         setError(data.error || 'Đã có lỗi xảy ra');
+        setLoading(false);
       }
     } catch (err) {
       setError('Lỗi kết nối tới máy chủ');
-    } finally {
       setLoading(false);
     }
   };
