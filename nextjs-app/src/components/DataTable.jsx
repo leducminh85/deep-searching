@@ -59,12 +59,14 @@ const Highlight = ({ text, searches, enabled }) => {
     );
 };
 
-const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
+const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSearchEnabled, initialData }) => {
 
-    const [data, setData] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [data, setData] = useState(initialData?.data || []);
+    const [loading, setLoading] = useState(!initialData?.data || initialData?.data.length === 0);
     const [progress, setProgress] = useState(0);
-    const [error, setError] = useState(null);
+    const [error, setError] = useState(initialData?.error || null);
+
+    const isFirstRun = useRef(true);
 
     const [searchTags, setSearchTags] = useState([]);
     const [appliedTags, setAppliedTags] = useState([]);
@@ -80,9 +82,9 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
     // Pagination state
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
-    const [totalResults, setTotalResults] = useState(0);
+    const [totalResults, setTotalResults] = useState(initialData?.total || 0);
     const [loadingMore, setLoadingMore] = useState(false);
-    const pageSize = 200; // Giảm xuống 200 để tối ưu RAM backend (512MB)
+    const pageSize = 50; // Set pageSize=50 để match với backend initial data. Nếu scroll page 2 sẽ nạp tiếp 50 rows
 
     // Advanced Filter state
     const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -98,6 +100,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
     // Column resizing state
     const [columnWidths, setColumnWidths] = useState({});
     const resizingRef = useRef(null);
+    const isRequestPendingRef = useRef(false);
     const [isAddChannelOpen, setIsAddChannelOpen] = useState(false);
     const [newChannelUrl, setNewChannelUrl] = useState('');
     const [newChannelNote, setNewChannelNote] = useState('');
@@ -108,6 +111,9 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
     // Translation state
     const hoverTimeoutRef = useRef(null);
     const [activeTranslation, setActiveTranslation] = useState(null);
+
+    // Lightbox state
+    const [selectedThumbnail, setSelectedThumbnail] = useState(null);
 
     const extractMainStory = (summary) => {
         if (!summary || typeof summary !== 'string') return "";
@@ -159,13 +165,37 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
     // Gọi fetch khi trang, từ khóa hoặc sắp xếp thay đổi
     useEffect(() => {
         const query = appliedTags.join(',');
-        fetchData(query, page, sortConfig, searchMode, appliedFilters);
-    }, [appliedTags, page, sortConfig, appliedFilters, searchMode]);
+        // Skip client fetch on first render if initialData is provided and we are on default view
+        if (isFirstRun.current && initialData?.data?.length > 0) {
+            isFirstRun.current = false;
+            if (page === 1 && !query && Object.keys(appliedFilters).length === 0) {
+                // Đã có từ SRR cho bản mặc định
+                setLoading(false);
+                return;
+            }
+        }
+        isFirstRun.current = false;
+
+        fetchData(query, page, sortConfig, searchMode, appliedFilters, captionSearchEnabled);
+    }, [appliedTags, page, sortConfig, appliedFilters]);
 
     // Lấy danh sách kênh khi component mount
     useEffect(() => {
         fetchChannels();
     }, []);
+
+    // Handle Escape key to close lightbox
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                setSelectedThumbnail(null);
+            }
+        };
+        if (selectedThumbnail) {
+            window.addEventListener('keydown', handleKeyDown);
+        }
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedThumbnail]);
 
     const fetchChannels = async () => {
         try {
@@ -183,7 +213,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
         }
     };
 
-    const fetchData = async (query = '', pageNum = 1, sort = sortConfig, mode = 'or', filters = {}) => {
+    const fetchData = async (query = '', pageNum = 1, sort = sortConfig, mode = 'or', filters = {}, captionSearch = false) => {
         // Chỉ abort request cũ khi tải trang 1 (tải lại từ đầu)
         if (pageNum === 1) {
             if (abortControllerRef.current) {
@@ -208,8 +238,8 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
             setProgress(0);
 
             // Giả lập tiến trình chạy từ 0 đến 60-80% trong 5 giây
-            const targetP = Math.floor(Math.random() * (80 - 60 + 1)) + 60;
-            const duration = 5000;
+            const targetP = Math.floor(Math.random() * (95 - 60 + 1)) + 60;
+            const duration = 2000;
             const step = 100;
             const increment = targetP / (duration / step);
 
@@ -230,7 +260,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
         setError(null);
 
         try {
-            const sortParam = sort.key || 'created_at';
+            const sortParam = sort.key || 'date_published';
             const orderParam = sort.direction;
 
             // Build filter query params
@@ -243,7 +273,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
                 filterParams += `&channels=${encodeURIComponent(filters.selectedChannels.join(','))}`;
             }
 
-            const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}&sort=${encodeURIComponent(sortParam)}&order=${orderParam}&mode=${mode}${filterParams}`;
+            const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}&sort=${encodeURIComponent(sortParam)}&order=${orderParam}&mode=${mode}${filterParams}&caption_search=${captionSearch ? '1' : '0'}`;
             const response = await fetch(url, { signal });
 
             if (!response.ok) throw new Error('Failed to fetch data');
@@ -255,6 +285,8 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
                 setData(newData);
             } else {
                 setData(prev => [...prev, ...newData]);
+                // Tự động tăng số dòng hiển thị một chút khi có dữ liệu mới để người dùng thấy ngay kết quả
+                setVisibleRows(prev => prev + 30);
             }
 
             setTotalResults(result.total || 0);
@@ -276,6 +308,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
             }
             setError(`${err.message}`);
         } finally {
+            isRequestPendingRef.current = false;
             if (signal.aborted) return;
             if (pageNum === 1) {
                 setTimeout(() => {
@@ -417,7 +450,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
     };
 
     const headers = useMemo(() => {
-        return [
+        const allHeaders = [
             'Title',
             'URL',
             'Views',
@@ -427,6 +460,10 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
             'Date Published',
             'Channel Name'
         ];
+        // if (!captionSearchEnabled) {
+        //     return allHeaders.filter(h => h !== 'Caption');
+        // }
+        return allHeaders;
     }, []);
 
     useEffect(() => {
@@ -467,15 +504,16 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
             if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 800) {
                 if (visibleRows < sortedData.length) {
                     setVisibleRows(prev => Math.min(prev + 30, sortedData.length));
-                } else if (hasMore && !loading && !loadingMore) {
-                    // Đã hiển thị hết data hiện có, tải thêm từ server
+                } else if (hasMore && !loading && !loadingMore && !isRequestPendingRef.current) {
+                    // Synchronously lock the request to prevent double fetching
+                    isRequestPendingRef.current = true;
                     setPage(prev => prev + 1);
                 }
             }
         };
         window.addEventListener('scroll', handleAutoLoad);
         return () => window.removeEventListener('scroll', handleAutoLoad);
-    }, [visibleRows, sortedData.length, hasMore, loading, loadingMore]);
+    }, [visibleRows, sortedData.length, hasMore, loading, loadingMore, page]);
 
     const handleScroll = (e) => {
         const { scrollTop, clientHeight, scrollHeight } = e.target;
@@ -573,6 +611,20 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
         return (match && match[7].length === 11) ? match[7] : null;
     };
 
+    const handleThumbnailClick = (src, row) => {
+        let largeSrc = src;
+        // If it's a YouTube thumbnail, try to get the highest resolution
+        if (src.includes('img.youtube.com')) {
+            const videoUrl = row['URL'] || row['url'] || row['Link'];
+            const videoId = getYouTubeID(videoUrl);
+            if (videoId) {
+                // Try maxresdefault for best quality
+                largeSrc = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+            }
+        }
+        setSelectedThumbnail(largeSrc);
+    };
+
     const renderCell = (header, value, row) => {
         const lowerHeader = header.toLowerCase();
 
@@ -591,7 +643,17 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
                     <img
                         src={src}
                         alt="Thumbnail"
-                        style={{ width: '100%', aspectRatio: '16/9', borderRadius: '4px', objectFit: 'cover', display: 'block' }}
+                        onClick={() => handleThumbnailClick(src, row)}
+                        style={{
+                            width: '100%',
+                            aspectRatio: '16/9',
+                            borderRadius: '4px',
+                            objectFit: 'cover',
+                            display: 'block',
+                            cursor: 'zoom-in',
+                            transition: 'transform 0.2s'
+                        }}
+                        className="thumbnail-img"
                         onError={(e) => { e.target.style.display = 'none'; }}
                     />
                 );
@@ -1132,6 +1194,78 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled }) => {
                             {activeTranslation.content}
                         </div>
                     )}
+                </div>
+            )}
+            {/* Lightbox Modal */}
+            {selectedThumbnail && (
+                <div
+                    className="modal-overlay lightbox-overlay"
+                    onClick={() => setSelectedThumbnail(null)}
+                    style={{ background: 'rgba(0, 0, 0, 0.9)' }}
+                >
+                    <div
+                        className="lightbox-container"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            position: 'relative',
+                            maxWidth: '90vw',
+                            maxHeight: '90vh',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            animation: 'popoverFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+                        }}
+                    >
+                        <button
+                            onClick={() => setSelectedThumbnail(null)}
+                            style={{
+                                position: 'absolute',
+                                top: '-40px',
+                                right: '-40px',
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'white',
+                                cursor: 'pointer',
+                                padding: '8px'
+                            }}
+                        >
+                            <X size={32} />
+                        </button>
+                        <img
+                            src={selectedThumbnail}
+                            alt="Large Thumbnail"
+                            style={{
+                                maxWidth: '100%',
+                                maxHeight: '90vh',
+                                borderRadius: '12px',
+                                boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+                                objectFit: 'contain'
+                            }}
+                            onLoad={(e) => {
+                                // Centralized check: if image is the 120px placeholder, move to next lower resolution
+                                if (e.target.naturalWidth === 120) {
+                                    const currentSrc = e.target.src;
+                                    if (currentSrc.includes('maxresdefault.jpg')) {
+                                        e.target.src = currentSrc.replace('maxresdefault.jpg', 'sddefault.jpg');
+                                    } else if (currentSrc.includes('sddefault.jpg')) {
+                                        e.target.src = currentSrc.replace('sddefault.jpg', 'hqdefault.jpg');
+                                    } else if (currentSrc.includes('hqdefault.jpg')) {
+                                        e.target.src = currentSrc.replace('hqdefault.jpg', 'mqdefault.jpg');
+                                    }
+                                }
+                            }}
+                            onError={(e) => {
+                                const currentSrc = e.target.src;
+                                if (currentSrc.includes('maxresdefault.jpg')) {
+                                    e.target.src = currentSrc.replace('maxresdefault.jpg', 'sddefault.jpg');
+                                } else if (currentSrc.includes('sddefault.jpg')) {
+                                    e.target.src = currentSrc.replace('sddefault.jpg', 'hqdefault.jpg');
+                                } else if (currentSrc.includes('hqdefault.jpg')) {
+                                    e.target.src = currentSrc.replace('hqdefault.jpg', 'mqdefault.jpg');
+                                }
+                            }}
+                        />
+                    </div>
                 </div>
             )}
         </>

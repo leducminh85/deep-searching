@@ -47,6 +47,7 @@ body {
 
 * {
   box-sizing: border-box;
+  font-family: inherit;
 }
 
 .container {
@@ -273,6 +274,11 @@ tr:last-child td {
 .col-thumbnail {
   width: 214px;
   min-width: 214px;
+}
+
+.thumbnail-img:hover {
+  transform: scale(1.05);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
 }
 
 /* Resizable Headers */
@@ -693,6 +699,7 @@ th {
   cursor: pointer;
   box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
   transition: all 0.2s;
+  font-family: inherit;
 }
 
 .apply-btn:hover {
@@ -709,6 +716,7 @@ th {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  font-family: inherit;
 }
 
 .reset-btn:hover {

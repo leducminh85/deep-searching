@@ -10,6 +10,10 @@
   font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
+.login-wrapper * {
+  font-family: inherit;
+}
+
 .bg-glow {
   position: absolute;
   width: 60vh;

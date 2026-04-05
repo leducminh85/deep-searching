@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '../../../utils/supabase/server';
 
-// Global cache for data (only small subset)
 let _cachedData = null;
 
 export async function GET(request) {
     try {
         const supabase = await createClient();
         const { data: { user }, error: authError } = await supabase.auth.getUser();
+        
         if (authError || !user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -15,7 +15,12 @@ export async function GET(request) {
         const { searchParams } = new URL(request.url);
         const query = searchParams.get('q') || null;
         const page = parseInt(searchParams.get('page') || '1', 10);
-        const pageSize = parseInt(searchParams.get('size') || '200', 10);
+        
+        // VÌ LẤY CAPTION NÊN PHẢI GIỚI HẠN SIZE ĐỂ TRÁNH TRÀN BỘ NHỚ (OUT OF MEMORY)
+        // Dù client có truyền lên size=200, backend cũng ép về tối đa 50 để an toàn
+        const rawSize = parseInt(searchParams.get('size') || '20', 10);
+        const pageSize = Math.min(rawSize, 50); 
+        
         const sortBy = searchParams.get('sort') || 'Created At';
         const sortOrder = searchParams.get('order') || 'desc';
         const mode = searchParams.get('mode') || 'or';
@@ -24,19 +29,22 @@ export async function GET(request) {
         const startDate = searchParams.get('start_date') || null;
         const endDate = searchParams.get('end_date') || null;
         const channels = searchParams.get('channels') || null;
+        
+        const captionSearchParam = searchParams.get('caption_search');
+        const captionSearch = captionSearchParam === '1';
 
-        const [data, total, errorInfo] = await getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels);
+        const [data, total, errorInfo] = await getDataInternal(
+            supabase, query, page, pageSize, sortBy, sortOrder, 
+            mode, minViews, maxViews, startDate, endDate, channels, captionSearch
+        );
+
         if (errorInfo) {
             return NextResponse.json({ detail: errorInfo, data: [], total: 0 }, { status: 500 });
         }
-        const response = NextResponse.json({
-            data,
-            total,
-            page,
-            page_size: pageSize
-        });
 
-        // Background logging for search history (don't await to keep response fast)
+        const response = NextResponse.json({ data, total, page, page_size: pageSize });
+
+        // Ghi log lịch sử tìm kiếm
         if (page === 1 && query && query.trim()) {
             logSearchHistory(supabase, query, mode, total, user?.email);
         }
@@ -50,12 +58,9 @@ export async function GET(request) {
 async function logSearchHistory(supabase, query, mode, totalCount, email) {
     if (!supabase) return;
     try {
-        let keywords = [];
-        if (query.includes(',')) {
-            keywords = query.split(',').map(k => k.trim()).filter(k => k);
-        } else {
-            keywords = query.split(' ').map(k => k.trim()).filter(k => k);
-        }
+        const keywords = query.includes(',') 
+            ? query.split(',').map(k => k.trim()).filter(k => k)
+            : query.split(' ').map(k => k.trim()).filter(k => k);
 
         await supabase
             .from('search_history')
@@ -71,157 +76,86 @@ async function logSearchHistory(supabase, query, mode, totalCount, email) {
     }
 }
 
-async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels) {
+export async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels, captionSearch) {
     const columnMap = {
-        'title': 'title', 'url': 'url', 'link': 'url', 'views': 'views',
-        'date_published': 'date_published', 'date published': 'date_published',
-        'channel_name': 'channel_name', 'channel name': 'channel_name',
-        'created_at': 'created_at', 'created at': 'created_at',
-        'thumbnail': 'thumbnail', 'caption': 'caption', 'summary': 'summary'
+        'title': 'title', 'url': 'url', 'views': 'views',
+        'date_published': 'date_published', 'channel_name': 'channel_name',
+        'created_at': 'created_at', 'thumbnail': 'thumbnail'
     };
-    const normalizedSort = String(sortBy).toLowerCase().trim();
-    const dbSortColumn = columnMap[normalizedSort] || 'created_at';
+    
+    const dbSortColumn = columnMap[String(sortBy).toLowerCase().trim()] || 'created_at';
     const isDescending = String(sortOrder).toLowerCase() === 'desc';
     const start = (page - 1) * pageSize;
     const end = start + pageSize - 1;
 
-    // Chỉ dùng cache nếu KHÔNG có bất kỳ bộ lọc nào
-    const hasFilters = !!(query || minViews !== null || maxViews !== null || startDate || endDate || channels);
-    if (!hasFilters && page === 1 && dbSortColumn === 'created_at' && isDescending && _cachedData !== null) {
-        return _cachedData;
-    }
-
-    if (!supabase) {
-        return [[], 0, "Supabase environment variables (SUPABASE_URL, SUPABASE_KEY) are missing in production settings."];
-    }
-
     try {
+        const countOption = 'estimated';
+        
+        // ĐÃ THÊM LẠI CAPTION VÀ SUMMARY VÀO LỆNH SELECT
         let builder = supabase
             .from('videos')
-            .select('title,url,channel_name,views,date_published,thumbnail,caption,summary,created_at', { count: 'exact' });
+            .select('title,url,channel_name,views,date_published,thumbnail,created_at,caption,summary', { count: countOption });
 
-        // 1. Xử lý tìm kiếm từ khóa
-        let keywords = [];
-        if (query) {
-            if (query.includes(',')) {
-                keywords = query.split(',').map(k => k.trim()).filter(k => k);
+        // Xử lý tìm kiếm Full-Text
+        if (query && query.trim()) {
+            const ftsColumn = captionSearch ? 'fts' : 'fts_no_caption';
+            const cleanQuery = query.trim();
+
+            if (mode === 'and') {
+                const andQuery = cleanQuery.split(/[\s,]+/).filter(k => k).join(' & ');
+                builder = builder.textSearch(ftsColumn, andQuery, { type: 'raw', config: 'simple' });
             } else {
-                keywords = query.split(' ').map(k => k.trim()).filter(k => k);
-            }
-
-            if (keywords.length > 0) {
-                const searchFields = ['title', 'summary', 'caption', 'channel_name'];
-                if (mode === 'and') {
-                    for (const kw of keywords) {
-                        const pattern = `%${kw}%`;
-                        builder = builder.or(searchFields.map(f => `${f}.ilike.${pattern}`).join(','));
-                    }
-                } else {
-                    const orConds = [];
-                    for (const kw of keywords) {
-                        const pattern = `%${kw}%`;
-                        for (const f of searchFields) {
-                            orConds.push(`${f}.ilike.${pattern}`);
-                        }
-                    }
-                    if (orConds.length > 0) {
-                        builder = builder.or(orConds.join(','));
-                    }
-                }
+                builder = builder.textSearch(ftsColumn, cleanQuery, { type: 'websearch', config: 'simple' });
             }
         }
 
-        // 2. Xử lý bộ lọc nâng cao
-        if (minViews !== null) {
-            builder = builder.gte('views', minViews);
-        }
-        if (maxViews !== null) {
-            builder = builder.lte('views', maxViews);
-        }
-        if (startDate) {
-            builder = builder.gte('date_published', startDate);
-        }
-        if (endDate) {
-            builder = builder.lte('date_published', endDate);
-        }
+        // Áp dụng bộ lọc
+        if (minViews !== null) builder = builder.gte('views', minViews);
+        if (maxViews !== null) builder = builder.lte('views', maxViews);
+        if (startDate) builder = builder.gte('date_published', startDate);
+        if (endDate) builder = builder.lte('date_published', endDate);
         if (channels) {
-            const channelList = channels.split(',').map(c => c.trim()).filter(c => c);
-            if (channelList.length > 0) {
-                builder = builder.in('channel_name', channelList);
-            }
+            const list = channels.split(',').map(c => c.trim()).filter(c => c);
+            if (list.length > 0) builder = builder.in('channel_name', list);
         }
 
-        let response;
-        try {
-            response = await builder
+        let data, count, error;
+
+        // VẪN GIỮ LUỒNG ÉP GIN INDEX ĐỂ TRÁNH TIMEOUT
+        if (query && query.trim()) {
+            // NẾU CÓ TỪ KHÓA: Tìm thẳng, lấy dữ liệu, KHÔNG ORDER.
+            const result = await builder.range(start, end);
+            data = result.data;
+            count = result.count;
+            error = result.error;
+        } else {
+            // NẾU LƯỚT XEM BÌNH THƯỜNG: Sắp xếp theo ngày/view
+            const result = await builder
                 .order(dbSortColumn, { ascending: !isDescending })
                 .range(start, end);
-            
-            if (response.error) throw response.error;
-        } catch (e) {
-            console.error('❌ Data API Error:', e);
-            // Fallback nếu search timeout (giữ nguyên logic cũ: fallback về title/channel_name)
-            const errorMsg = String(e.message || e).toLowerCase();
-            const errorCode = e.code ? String(e.code) : '';
-            if (query && (errorMsg.includes('57014') || errorCode === '57014' || errorMsg.includes('timeout'))) {
-                console.log('⚠️ Search timeout detected. Fallback to Title/Channel only...');
-                builder = supabase
-                    .from('videos')
-                    .select('title,url,channel_name,views,date_published,thumbnail,caption,summary,created_at', { count: 'exact' });
-
-                // Áp dụng lại các filter nâng cao
-                if (minViews !== null) builder = builder.gte('views', minViews);
-                if (maxViews !== null) builder = builder.lte('views', maxViews);
-                if (startDate) builder = builder.gte('date_published', startDate);
-                if (endDate) builder = builder.lte('date_published', endDate);
-                if (channels) {
-                    const chanList = channels.split(',').map(c => c.trim()).filter(c => c);
-                    if (chanList.length > 0) builder = builder.in('channel_name', chanList);
-                }
-
-                const limitF = ['title', 'channel_name'];
-                if (mode === 'and') {
-                    for (const kw of keywords) {
-                        const pattern = `%${kw}%`;
-                        builder = builder.or(limitF.map(f => `${f}.ilike.${pattern}`).join(','));
-                    }
-                } else {
-                    const orC = [];
-                    for (const kw of keywords) {
-                        const pattern = `%${kw}%`;
-                        for (const f of limitF) orC.push(`${f}.ilike.${pattern}`);
-                    }
-                    if (orC.length > 0) builder = builder.or(orC.join(','));
-                }
-                response = await builder
-                    .order(dbSortColumn, { ascending: !isDescending })
-                    .range(start, end);
-                
-                if (response.error) throw response.error;
-            } else {
-                throw e;
-            }
+            data = result.data;
+            count = result.count;
+            error = result.error;
         }
 
-        const records = response.data || [];
-        const totalCount = response.count !== null && response.count !== undefined ? response.count : 0;
-        const formatted = records.map(r => ({
+        if (error) throw error;
+
+        const formatted = (data || []).map(r => ({
             'Title': r.title || '',
             'URL': r.url || '',
             'Channel Name': r.channel_name || '',
             'Views': r.views || 0,
             'Date Published': r.date_published || '',
             'Thumbnail': r.thumbnail || '',
-            'Caption': r.caption || '',
-            'Summary': r.summary || ''
+            'Caption': r.caption || '',  
+            'Summary': r.summary || ''    
         }));
 
-        if (!hasFilters && page === 1 && dbSortColumn === 'created_at' && isDescending) {
-            _cachedData = [formatted, totalCount, null];
-        }
-        return [formatted, totalCount, null];
+        const finalCount = (count === 0 && formatted.length > 0) ? 1000 : (count || 0);
+
+        return [formatted, finalCount, null];
     } catch (e) {
-        console.error(`❌ Database error: ${e}`);
-        return [[], 0, String(e.message || e)];
+        console.error(`❌ DB Error: ${e.message}`);
+        return [[], 0, e.message];
     }
 }
