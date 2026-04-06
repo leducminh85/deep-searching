@@ -100,13 +100,18 @@ export async function getDataInternal(supabase, query, page, pageSize, sortBy, s
         if (query && query.trim()) {
             const ftsColumn = captionSearch ? 'fts' : 'fts_no_caption';
             const cleanQuery = query.trim();
-
+const safeQuery = query.trim().replace(/[^\p{L}\p{N}\s,]/gu, '');
+       
+const terms = safeQuery.split(/[\s,]+/).filter(k => k);
             if (mode === 'and') {
-                const andQuery = cleanQuery.split(/[\s,]+/).filter(k => k).join(' & ');
-                builder = builder.textSearch(ftsColumn, andQuery, { type: 'raw', config: 'simple' });
-            } else {
-                builder = builder.textSearch(ftsColumn, cleanQuery, { type: 'websearch', config: 'simple' });
-            }
+            // Nối bằng '&' cho điều kiện AND
+            const andQuery = terms.join(' & ');
+            builder = builder.textSearch(ftsColumn, andQuery, { type: 'raw', config: 'simple' });
+        } else {
+            // Nối bằng '|' cho điều kiện OR
+            const orQuery = terms.join(' | ');
+            builder = builder.textSearch(ftsColumn, orQuery, { type: 'raw', config: 'simple' });
+        }
         }
 
         // Áp dụng bộ lọc
