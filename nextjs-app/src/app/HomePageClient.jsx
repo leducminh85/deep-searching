@@ -40,7 +40,7 @@ export default function HomePageClient({ initialData }) {
     {
       target: '.tour-caption',
       title: 'Bước 4/8: Tìm trong Phụ đề',
-      content: 'Bật để tìm kiếm mở rộng bao gồm nội dung phụ đề (caption). Khi tắt, cột phụ đề sẽ ẩn đi cho gọn bảng.',
+      content: 'Bật để tìm kiếm mở rộng bao gồm nội dung phụ đề (caption).',
       disableScrolling: true,
     },
     {
