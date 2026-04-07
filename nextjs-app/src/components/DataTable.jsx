@@ -455,14 +455,10 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
             'URL',
             'Views',
             'Thumbnail',
-            'Caption',
             'Summary',
             'Date Published',
             'Channel Name'
         ];
-        // if (!captionSearchEnabled) {
-        //     return allHeaders.filter(h => h !== 'Caption');
-        // }
         return allHeaders;
     }, []);
 
