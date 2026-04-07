@@ -609,13 +609,13 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
 
     const handleThumbnailClick = (src, row) => {
         let largeSrc = src;
-        // If it's a YouTube thumbnail, try to get the highest resolution
-        if (src.includes('img.youtube.com')) {
+        // YouTube domain includes i.ytimg.com or img.youtube.com
+        if (src && (src.includes('ytimg.com') || src.includes('youtube.com'))) {
             const videoUrl = row['URL'] || row['url'] || row['Link'];
             const videoId = getYouTubeID(videoUrl);
             if (videoId) {
                 // Try maxresdefault for best quality
-                largeSrc = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+                largeSrc = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
             }
         }
         setSelectedThumbnail(largeSrc);
