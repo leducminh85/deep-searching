@@ -16,10 +16,9 @@ export async function GET(request) {
         const query = searchParams.get('q') || null;
         const page = parseInt(searchParams.get('page') || '1', 10);
         
-        // VÌ LẤY CAPTION NÊN PHẢI GIỚI HẠN SIZE ĐỂ TRÁNH TRÀN BỘ NHỚ (OUT OF MEMORY)
-        // Dù client có truyền lên size=200, backend cũng ép về tối đa 50 để an toàn
+        // GIỚI HẠN SIZE ĐỂ TRÁNH QUÁ TẢI (SIZE TỐI ĐA 100)
         const rawSize = parseInt(searchParams.get('size') || '20', 10);
-        const pageSize = Math.min(rawSize, 50); 
+        const pageSize = Math.min(rawSize, 100); 
         
         const sortBy = searchParams.get('sort') || 'Created At';
         const sortOrder = searchParams.get('order') || 'desc';
@@ -78,9 +77,16 @@ async function logSearchHistory(supabase, query, mode, totalCount, email) {
 
 export async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels, captionSearch) {
     const columnMap = {
-        'title': 'title', 'url': 'url', 'views': 'views',
-        'date_published': 'date_published', 'channel_name': 'channel_name',
-        'created_at': 'created_at', 'thumbnail': 'thumbnail'
+        'title': 'title',
+        'url': 'url',
+        'views': 'views',
+        'date published': 'date_published',
+        'date_published': 'date_published',
+        'channel name': 'channel_name',
+        'channel_name': 'channel_name',
+        'created_at': 'created_at',
+        'thumbnail': 'thumbnail',
+        'summary': 'summary'
     };
     
     const dbSortColumn = columnMap[String(sortBy).toLowerCase().trim()] || 'created_at';
@@ -89,12 +95,12 @@ export async function getDataInternal(supabase, query, page, pageSize, sortBy, s
     const end = start + pageSize - 1;
 
     try {
-        const countOption = 'estimated';
+        const countOption = 'exact';
         
-        // ĐÃ THÊM LẠI CAPTION VÀ SUMMARY VÀO LỆNH SELECT
+        // BỎ CAPTION ĐỂ TĂNG TỐC ĐỘ (CHỈ LẤY CÁC TRƯỜNG CẦN THIẾT)
         let builder = supabase
-            .from('videos')
-            .select('title,url,channel_name,views,date_published,thumbnail,created_at,caption,summary', { count: countOption });
+            .from('videos-ver1')
+            .select('title,url,channel_name,views,date_published,thumbnail,created_at,summary', { count: countOption });
 
         // Xử lý tìm kiếm Full-Text
         if (query && query.trim()) {
@@ -126,22 +132,14 @@ const terms = safeQuery.split(/[\s,]+/).filter(k => k);
 
         let data, count, error;
 
-        // VẪN GIỮ LUỒNG ÉP GIN INDEX ĐỂ TRÁNH TIMEOUT
-        if (query && query.trim()) {
-            // NẾU CÓ TỪ KHÓA: Tìm thẳng, lấy dữ liệu, KHÔNG ORDER.
-            const result = await builder.range(start, end);
-            data = result.data;
-            count = result.count;
-            error = result.error;
-        } else {
-            // NẾU LƯỚT XEM BÌNH THƯỜNG: Sắp xếp theo ngày/view
-            const result = await builder
-                .order(dbSortColumn, { ascending: !isDescending })
-                .range(start, end);
-            data = result.data;
-            count = result.count;
-            error = result.error;
-        }
+        // LUÔN ÁP DỤNG SORT ĐỂ KẾT QUẢ ĐỒNG NHẤT
+        const result = await builder
+            .order(dbSortColumn, { ascending: !isDescending })
+            .range(start, end);
+        
+        data = result.data;
+        count = result.count;
+        error = result.error;
 
         if (error) throw error;
 
@@ -152,7 +150,6 @@ const terms = safeQuery.split(/[\s,]+/).filter(k => k);
             'Views': r.views || 0,
             'Date Published': r.date_published || '',
             'Thumbnail': r.thumbnail || '',
-            'Caption': r.caption || '',  
             'Summary': r.summary || ''    
         }));
 
