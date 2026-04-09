@@ -57,9 +57,7 @@ export async function GET(request) {
 async function logSearchHistory(supabase, query, mode, totalCount, email) {
     if (!supabase) return;
     try {
-        const keywords = query.includes(',') 
-            ? query.split(',').map(k => k.trim()).filter(k => k)
-            : query.split(' ').map(k => k.trim()).filter(k => k);
+        const keywords = query.split(',').map(k => k.trim()).filter(k => k);
 
         await supabase
             .from('search_history')
@@ -105,19 +103,26 @@ export async function getDataInternal(supabase, query, page, pageSize, sortBy, s
         // Xử lý tìm kiếm Full-Text
         if (query && query.trim()) {
             const ftsColumn = captionSearch ? 'fts' : 'fts_no_caption';
-            const cleanQuery = query.trim();
-const safeQuery = query.trim().replace(/[^\p{L}\p{N}\s,]/gu, '');
-       
-const terms = safeQuery.split(/[\s,]+/).filter(k => k);
-            if (mode === 'and') {
-            // Nối bằng '&' cho điều kiện AND
-            const andQuery = terms.join(' & ');
-            builder = builder.textSearch(ftsColumn, andQuery, { type: 'raw', config: 'simple' });
-        } else {
-            // Nối bằng '|' cho điều kiện OR
-            const orQuery = terms.join(' | ');
-            builder = builder.textSearch(ftsColumn, orQuery, { type: 'raw', config: 'simple' });
-        }
+            const safeQuery = query.trim().replace(/[^\p{L}\p{N}\s,]/gu, '');
+            
+            // Tách theo dấu phẩy trước để lấy các tags (từ khóa)
+            const tags = safeQuery.split(',').map(t => t.trim()).filter(t => t);
+            
+            const tagQueries = tags.map(tag => {
+                // Trong mỗi tag, nếu có khoảng trắng thì coi là cụm từ (phrase search)
+                // Sử dụng operator <-> của PostgreSQL để tìm kiếm chính xác thứ tự cụm từ
+                const words = tag.split(/\s+/).filter(w => w);
+                if (words.length > 1) {
+                    return `(${words.join(' <-> ')})`;
+                }
+                return words[0];
+            });
+
+            if (tagQueries.length > 0) {
+                const operator = mode === 'and' ? ' & ' : ' | ';
+                const finaltsQuery = tagQueries.join(operator);
+                builder = builder.textSearch(ftsColumn, finaltsQuery, { type: 'raw', config: 'simple' });
+            }
         }
 
         // Áp dụng bộ lọc
