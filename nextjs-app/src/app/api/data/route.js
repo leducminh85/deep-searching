@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '../../../utils/supabase/server';
+import { queryVideos } from '../../../lib/localDb';
 
 let _cachedData = null;
 
 export async function GET(request) {
     try {
+        // Auth vẫn dùng Supabase
         const supabase = await createClient();
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         
@@ -32,8 +34,9 @@ export async function GET(request) {
         const captionSearchParam = searchParams.get('caption_search');
         const captionSearch = captionSearchParam === '1';
 
+        // Query video data từ LOCAL PostgreSQL
         const [data, total, errorInfo] = await getDataInternal(
-            supabase, query, page, pageSize, sortBy, sortOrder, 
+            query, page, pageSize, sortBy, sortOrder, 
             mode, minViews, maxViews, startDate, endDate, channels, captionSearch
         );
 
@@ -43,7 +46,7 @@ export async function GET(request) {
 
         const response = NextResponse.json({ data, total, page, page_size: pageSize });
 
-        // Ghi log lịch sử tìm kiếm
+        // Ghi log lịch sử tìm kiếm vẫn dùng Supabase
         if (page === 1 && query && query.trim()) {
             logSearchHistory(supabase, query, mode, total, user?.email);
         }
@@ -73,96 +76,20 @@ async function logSearchHistory(supabase, query, mode, totalCount, email) {
     }
 }
 
-export async function getDataInternal(supabase, query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels, captionSearch) {
-    const columnMap = {
-        'title': 'title',
-        'url': 'url',
-        'views': 'views',
-        'date published': 'date_published',
-        'date_published': 'date_published',
-        'channel name': 'channel_name',
-        'channel_name': 'channel_name',
-        'created_at': 'created_at',
-        'thumbnail': 'thumbnail',
-        'summary': 'summary'
-    };
-    
-    const dbSortColumn = columnMap[String(sortBy).toLowerCase().trim()] || 'created_at';
-    const isDescending = String(sortOrder).toLowerCase() === 'desc';
-    const start = (page - 1) * pageSize;
-    const end = start + pageSize - 1;
-
-    try {
-        const countOption = 'exact';
-        
-        // BỎ CAPTION ĐỂ TĂNG TỐC ĐỘ (CHỈ LẤY CÁC TRƯỜNG CẦN THIẾT)
-        let builder = supabase
-            .from('videos-ver1')
-            .select('title,url,channel_name,views,date_published,thumbnail,created_at,summary', { count: countOption });
-
-        // Xử lý tìm kiếm Full-Text
-        if (query && query.trim()) {
-            const ftsColumn = captionSearch ? 'fts' : 'fts_no_caption';
-            const safeQuery = query.trim().replace(/[^\p{L}\p{N}\s,]/gu, '');
-            
-            // Tách theo dấu phẩy trước để lấy các tags (từ khóa)
-            const tags = safeQuery.split(',').map(t => t.trim()).filter(t => t);
-            
-            const tagQueries = tags.map(tag => {
-                // Trong mỗi tag, nếu có khoảng trắng thì coi là cụm từ (phrase search)
-                // Sử dụng operator <-> của PostgreSQL để tìm kiếm chính xác thứ tự cụm từ
-                const words = tag.split(/\s+/).filter(w => w);
-                if (words.length > 1) {
-                    return `(${words.join(' <-> ')})`;
-                }
-                return words[0];
-            });
-
-            if (tagQueries.length > 0) {
-                const operator = mode === 'and' ? ' & ' : ' | ';
-                const finaltsQuery = tagQueries.join(operator);
-                builder = builder.textSearch(ftsColumn, finaltsQuery, { type: 'raw', config: 'simple' });
-            }
-        }
-
-        // Áp dụng bộ lọc
-        if (minViews !== null) builder = builder.gte('views', minViews);
-        if (maxViews !== null) builder = builder.lte('views', maxViews);
-        if (startDate) builder = builder.gte('date_published', startDate);
-        if (endDate) builder = builder.lte('date_published', endDate);
-        if (channels) {
-            const list = channels.split(',').map(c => c.trim()).filter(c => c);
-            if (list.length > 0) builder = builder.in('channel_name', list);
-        }
-
-        let data, count, error;
-
-        // LUÔN ÁP DỤNG SORT ĐỂ KẾT QUẢ ĐỒNG NHẤT
-        const result = await builder
-            .order(dbSortColumn, { ascending: !isDescending })
-            .range(start, end);
-        
-        data = result.data;
-        count = result.count;
-        error = result.error;
-
-        if (error) throw error;
-
-        const formatted = (data || []).map(r => ({
-            'Title': r.title || '',
-            'URL': r.url || '',
-            'Channel Name': r.channel_name || '',
-            'Views': r.views || 0,
-            'Date Published': r.date_published || '',
-            'Thumbnail': r.thumbnail || '',
-            'Summary': r.summary || ''    
-        }));
-
-        const finalCount = (count === 0 && formatted.length > 0) ? 1000 : (count || 0);
-
-        return [formatted, finalCount, null];
-    } catch (e) {
-        console.error(`❌ DB Error: ${e.message}`);
-        return [[], 0, e.message];
-    }
+export async function getDataInternal(query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels, captionSearch) {
+    // Dùng LOCAL PostgreSQL cho video data
+    return await queryVideos({
+        query,
+        page,
+        pageSize,
+        sortBy,
+        sortOrder,
+        mode,
+        minViews,
+        maxViews,
+        startDate,
+        endDate,
+        channels,
+        captionSearch,
+    });
 }
