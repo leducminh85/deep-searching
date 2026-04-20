@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import math
+import time
 
 # Load cấu hình từ .env
 load_dotenv()
@@ -11,18 +12,18 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 FILE_PATH = "data.xlsx"
 SHEET_NAME = "NEW_CACHE_DATA_HIDDEN_"
-BATCH_SIZE = 10 # Chia nhỏ để đẩy lên không bị lỗi timeout
+BATCH_SIZE = 100 # Chia nhỏ để đẩy lên không bị lỗi timeout
 START_ROW = 1    # Dòng bắt đầu trong Excel (Dòng 1 là tiêu đề)
 END_ROW = None   # Dòng kết thúc trong Excel (None = chạy tới hết)
 
 def sync():
     if not SUPABASE_URL or not SUPABASE_KEY:
-        print("❌ Lỗi: Chưa cấu hình SUPABASE_URL hoặc SUPABASE_KEY trong file .env")
+        print("Error: SUPABASE_URL or SUPABASE_KEY not configured in .env")
         return
 
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    print(f"📂 Đang đọc file {FILE_PATH}...")
+    print(f"Opening file {FILE_PATH}...")
     try:
         # Đọc toàn bộ file Excel
         df = pd.read_excel(FILE_PATH, sheet_name=SHEET_NAME)
@@ -87,44 +88,65 @@ def sync():
         # Chuyển đổi sang list dictionary để upload
         records = df.to_dict(orient='records')
         total = len(records)
-        print(f"📊 Tìm thấy {total} dòng dữ liệu. Bắt đầu đẩy lên Supabase...")
+        print(f"Total records found: {total}. Starting sync to Supabase...")
 
-        import time
-        
         # Tính toán range dữ liệu dựa trên Dòng Excel (Row Number)
         # Giả sử dòng 1 là tiêu đề, nên index 0 của DataFrame chính là dòng 2 Excel
         start_idx = max(0, START_ROW - 2)
         if END_ROW:
-            # Ví dụ: END_ROW = 100, ta muốn lấy đến hết dòng 100 (index 98). Slice records[start:99] sẽ lấy đến index 98.
             end_idx = min(END_ROW - 1, total) 
         else:
             end_idx = total
             
-        print(f"🚀 Cấu hình: Đẩy từ Dòng {START_ROW} đến { 'Cuối file' if END_ROW is None else 'Dòng ' + str(END_ROW)}")
-        print(f"📍 Tổng số phần tử cần xử lý: {max(0, end_idx - start_idx)}\n")
+        print(f"Config: Syncing from Row {START_ROW} to { 'End of file' if END_ROW is None else 'Row ' + str(END_ROW)}")
+        print(f"Items to process: {max(0, end_idx - start_idx)}\n")
 
         # Chạy Upsert theo từng Batch
+        failed_batches = []
+        
         for i in range(start_idx, end_idx, BATCH_SIZE):
             batch = records[i : min(i + BATCH_SIZE, end_idx)]
             
-            max_retries = 5
+            max_retries = 3
+            success = False
             for attempt in range(max_retries + 1):
                 try:
-                    # upsert dựa trên cột 'url' (đã set UNIQUE trong DB)
-                    supabase.table("videos-ver1").upsert(batch, on_conflict="url").execute()
-                    print(f"✅ Đã xong: Dòng {min(i + BATCH_SIZE + 1, end_idx + 1)} / {total + 1}")
-                    break # Thành công thì thoát vòng lặp retry
+                    supabase.table("videos-ver2").upsert(batch, on_conflict="url").execute()
+                    print(f"DONE: Row {min(i + BATCH_SIZE + 1, end_idx + 1)} / {total + 1}")
+                    success = True
+                    break
                 except Exception as e:
                     if attempt < max_retries:
-                        print(f"🔄 Thử lại tại dòng {i+2} (lần {attempt + 1}/{max_retries}) do lỗi: {e}")
-                        time.sleep(5) # Đợi 1 phút trước khi thử lại
+                        print(f"RETRYing row {i+2} (attempt {attempt + 1}/{max_retries}) error: {e}")
+                        time.sleep(2)
                     else:
-                        print(f"❌ Đã thử {max_retries} lần nhưng vẫn lỗi. Bỏ qua batch này. Lỗi cuối: {e}")
+                        print(f"SKIPPING batch at row {i+2}. Will retry later.")
+                        failed_batches.append(batch)
 
-        print("\n🎉 HOÀN TẤT ĐỒNG BỘ DỮ LIỆU!")
+        # Xử lý các batch bị lỗi sau vòng lặp chính
+        while failed_batches:
+            print(f"\n{len(failed_batches)} batches failed. Waiting 5 minutes before retrying...")
+            time.sleep(300) # Chờ 5 phút
+            
+            still_failed = []
+            print(f"Retrying {len(failed_batches)} batches...")
+            
+            for idx, batch in enumerate(failed_batches):
+                try:
+                    supabase.table("videos-ver2").upsert(batch, on_conflict="url").execute()
+                    print(f"Retry SUCCESS for batch {idx + 1}/{len(failed_batches)}")
+                except Exception as e:
+                    print(f"Still ERROR in batch {idx + 1}: {e}")
+                    still_failed.append(batch)
+            
+            failed_batches = still_failed
+            if not failed_batches:
+                print("All failed batches processed successfully!")
+
+        print("\nSYNC COMPLETED SUCCESSFULLY!")
 
     except Exception as e:
-        print(f"❌ Lỗi xử lý: {e}")
+        print(f"System Error: {e}")
 
 if __name__ == "__main__":
     sync()
