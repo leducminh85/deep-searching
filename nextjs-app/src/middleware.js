@@ -1,18 +1,17 @@
-import { updateSession } from './utils/supabase/middleware'
+import { NextResponse } from 'next/server'
 
-export async function middleware(request) {
-  return await updateSession(request)
+export function middleware(request) {
+  // Chuyển hướng ngay lập tức sang domain mới mà không cần kiểm tra
+  return NextResponse.redirect('https://deep-seaching.ducminh.space/', 301)
 }
 
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
+     * Áp dụng cho trang chủ và các đường dẫn khác, 
+     * ngoại trừ các tệp tĩnh và API để không làm treo ứng dụng
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/',
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
