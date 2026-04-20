@@ -27,8 +27,9 @@ export default async function HomePage() {
 
   if (user) {
     try {
+      // getDataInternal giờ dùng LOCAL PostgreSQL
       const [data, total, errorInfo] = await getDataInternal(
-        supabase, query, page, pageSize, sortBy, sortOrder, mode,
+        query, page, pageSize, sortBy, sortOrder, mode,
         minViews, maxViews, startDate, endDate, channels, captionSearch
       );
       if (errorInfo) {
