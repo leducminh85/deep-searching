@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 export function middleware(request) {
   // Chuyển hướng ngay lập tức sang domain mới mà không cần kiểm tra
-  return NextResponse.redirect('https://deep-seaching.ducminh.space/', 301)
+  return NextResponse.redirect('https://deep-seach.wevic.vn/', 301)
 }
 
 export const config = {
