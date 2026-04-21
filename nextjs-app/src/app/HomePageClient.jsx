@@ -14,7 +14,7 @@ export default function HomePageClient({ initialData }) {
   const [highlightEnabled, setHighlightEnabled] = useState(true);
   const [searchMode, setSearchMode] = useState('or');
   const [translateEnabled, setTranslateEnabled] = useState(false);
-  const [captionSearchEnabled, setCaptionSearchEnabled] = useState(true);
+  const [captionSearchEnabled, setCaptionSearchEnabled] = useState(false);
   const [runTour, setRunTour] = useState(false);
 
   const tourSteps = [
