@@ -16,7 +16,7 @@ FILE_PATH = "data.xlsx"
 SHEET_NAME = "NEW_CACHE_DATA_HIDDEN_"
 MAX_WORKERS = 4      # QUAN TRỌNG: Đã đổi thành 1 luồng để tránh tràn VRAM khi AI đọc đoạn text dài
 SAVE_EVERY = 2        
-MAX_TEST_VIDEOS = 10  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
+MAX_TEST_VIDEOS = 1  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
 COOKIES_FILE = "cookies.txt"  # File cookies từ trình duyệt để YouTube không chặn
 
 # Biến toàn cục
