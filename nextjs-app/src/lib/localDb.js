@@ -129,7 +129,7 @@ export async function queryVideos({
 
         // Data query
         const dataSql = `
-            SELECT title, url, channel_name, views, date_published, thumbnail, created_at, summary
+            SELECT title, url, channel_name, views, date_published, thumbnail, created_at, summary${captionSearch ? ', caption' : ''}
             FROM videos
             ${whereClause}
             ${orderClause}
@@ -139,15 +139,21 @@ export async function queryVideos({
 
         const dataResult = await db.query(dataSql, dataParams);
 
-        const formatted = dataResult.rows.map(r => ({
-            'Title': r.title || '',
-            'URL': r.url || '',
-            'Channel Name': r.channel_name || '',
-            'Views': r.views || 0,
-            'Date Published': r.date_published || '',
-            'Thumbnail': r.thumbnail || '',
-            'Summary': r.summary || '',
-        }));
+        const formatted = dataResult.rows.map(r => {
+            const row = {
+                'Title': r.title || '',
+                'URL': r.url || '',
+                'Channel Name': r.channel_name || '',
+                'Views': r.views || 0,
+                'Date Published': r.date_published || '',
+                'Thumbnail': r.thumbnail || '',
+                'Summary': r.summary || '',
+            };
+            if (captionSearch) {
+                row['Caption'] = r.caption || '';
+            }
+            return row;
+        });
 
         return [formatted, totalCount, null];
     } catch (e) {

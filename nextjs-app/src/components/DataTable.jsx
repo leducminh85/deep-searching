@@ -114,6 +114,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
 
     // Lightbox state
     const [selectedThumbnail, setSelectedThumbnail] = useState(null);
+    const [isCaptionColVisible, setIsCaptionColVisible] = useState(false);
 
     const extractMainStory = (summary) => {
         if (!summary || typeof summary !== 'string') return "";
@@ -233,6 +234,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         }
 
         if (pageNum === 1) {
+            setIsCaptionColVisible(captionSearch);
             setLoading(true);
             setData([]);
             setProgress(0);
@@ -455,12 +457,14 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
             'URL',
             'Views',
             'Thumbnail',
-            'Summary',
-            'Date Published',
-            'Channel Name'
+            'Summary'
         ];
+        if (isCaptionColVisible) {
+            allHeaders.push('Caption');
+        }
+        allHeaders.push('Date Published', 'Channel Name');
         return allHeaders;
-    }, []);
+    }, [isCaptionColVisible]);
 
     useEffect(() => {
         // Initial fetch handled by the other useEffect depending on appliedTags
