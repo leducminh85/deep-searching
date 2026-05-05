@@ -208,7 +208,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                     localIndexRef.current = data;
                     // Also populate seenSuggestions for spell-check
                     data.keywords?.forEach(k => seenSuggestionsRef.current.add(k.text.toLowerCase()));
-                    data.channels?.forEach(c => seenSuggestionsRef.current.add(c.toLowerCase()));
+
                 }
             } catch (err) {
                 console.error('Failed to preload suggestion index:', err);
@@ -366,6 +366,9 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         }
         setAppliedTags(newTags);
         setPage(1);
+        // Cancel any pending debounced fetch and in-flight request
+        if (suggestionsDebounceRef.current) clearTimeout(suggestionsDebounceRef.current);
+        if (suggestionsAbortRef.current) suggestionsAbortRef.current.abort();
         setShowSuggestions(false);
         setSuggestions([]);
     };
@@ -378,7 +381,11 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         } else {
             setInputValue('');
         }
+        // Cancel any pending debounced fetch and in-flight request
+        if (suggestionsDebounceRef.current) clearTimeout(suggestionsDebounceRef.current);
+        if (suggestionsAbortRef.current) suggestionsAbortRef.current.abort();
         setShowSuggestions(false);
+        setSuggestions([]);
     };
 
     const removeTag = (tagToRemove) => {
@@ -400,16 +407,9 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
 
         const results = [];
 
-        // Match channels (contains)
-        index.channels?.forEach(name => {
-            if (name.toLowerCase().includes(q) && results.length < 3) {
-                results.push({ text: name, type: 'channel' });
-            }
-        });
-
         // Match keywords (prefix)
         index.keywords?.forEach(k => {
-            if (k.text.startsWith(q) && results.length < 11) {
+            if (k.text.startsWith(q) && results.length < 12) {
                 results.push({ text: k.text, type: 'keyword', count: k.count });
             }
         });
@@ -501,6 +501,9 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
             setSearchTags([...searchTags, text]);
         }
         setInputValue('');
+        // Cancel any pending debounced fetch and in-flight request
+        if (suggestionsDebounceRef.current) clearTimeout(suggestionsDebounceRef.current);
+        if (suggestionsAbortRef.current) suggestionsAbortRef.current.abort();
         setShowSuggestions(false);
         setSuggestions([]);
     };
@@ -1152,9 +1155,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                                                 onClick={() => handleSuggestionSelect(item)}
                                                 onMouseEnter={() => setActiveSuggestionIndex(idx)}
                                             >
-                                                <div className={`autocomplete-item-icon ${item.type}`}>
-                                                    {item.type === 'channel' ? '📺' : '🔍'}
-                                                </div>
+                                                <div className="autocomplete-item-icon">🔍</div>
                                                 <span className="autocomplete-item-text">
                                                     {textContent}
                                                 </span>
@@ -1163,9 +1164,6 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                                                         {item.count}
                                                     </span>
                                                 )}
-                                                <span className="autocomplete-item-type">
-                                                    {item.type === 'channel' ? 'Kênh' : 'Từ khóa'}
-                                                </span>
                                             </div>
                                         );
                                     })}
