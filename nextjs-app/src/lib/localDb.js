@@ -187,36 +187,18 @@ export async function getSuggestions(query) {
     try {
         const lowerQuery = query.toLowerCase();
         const prefixPattern = `${lowerQuery}%`;
-        const likePattern = `%${lowerQuery}%`;
 
-        // Run both queries in parallel for speed
-        const [keywordResult, channelResult] = await Promise.all([
-            db.query(
-                `SELECT word, nentry 
-                 FROM ts_stat('SELECT fts_no_caption FROM videos') 
-                 WHERE word LIKE $1 AND length(word) >= 2
-                 ORDER BY nentry DESC 
-                 LIMIT 8`,
-                [prefixPattern]
-            ),
-            db.query(
-                `SELECT DISTINCT channel_name FROM videos 
-                 WHERE channel_name ILIKE $1 AND channel_name IS NOT NULL AND channel_name != ''
-                 ORDER BY channel_name 
-                 LIMIT 3`,
-                [likePattern]
-            )
-        ]);
+        // Only fetch keywords now
+        const keywordResult = await db.query(
+            `SELECT word, nentry 
+             FROM ts_stat('SELECT fts_no_caption FROM videos') 
+             WHERE word LIKE $1 AND length(word) >= 2
+             ORDER BY nentry DESC 
+             LIMIT 12`,
+            [prefixPattern]
+        );
 
         const suggestions = [];
-
-        // Add channel suggestions
-        channelResult.rows.forEach(r => {
-            suggestions.push({
-                text: r.channel_name,
-                type: 'channel',
-            });
-        });
 
         // Add keyword suggestions
         keywordResult.rows.forEach(r => {
@@ -236,7 +218,7 @@ export async function getSuggestions(query) {
 
 /**
  * Preload the entire suggestion index for client-side filtering.
- * Returns all FTS lexemes (with counts) and all channel names.
+ * Returns all FTS lexemes (with counts).
  * Cached in server memory for 5 minutes to avoid repeated heavy queries.
  */
 let _cachedIndex = null;
@@ -251,31 +233,24 @@ export async function preloadSuggestionIndex() {
 
     const db = getPool();
     try {
-        const [keywordResult, channelResult] = await Promise.all([
-            db.query(
-                `SELECT word, nentry 
-                 FROM ts_stat('SELECT fts_no_caption FROM videos') 
-                 WHERE length(word) >= 2
-                 ORDER BY nentry DESC 
-                 LIMIT 2000`
-            ),
-            db.query(
-                `SELECT DISTINCT channel_name FROM videos 
-                 WHERE channel_name IS NOT NULL AND channel_name != ''
-                 ORDER BY channel_name`
-            )
-        ]);
+        const keywordResult = await db.query(
+            `SELECT word, nentry 
+             FROM ts_stat('SELECT fts_no_caption FROM videos') 
+             WHERE length(word) >= 2
+             ORDER BY nentry DESC 
+             LIMIT 2000`
+        );
 
         _cachedIndex = {
             keywords: keywordResult.rows.map(r => ({ text: r.word, count: r.nentry })),
-            channels: channelResult.rows.map(r => r.channel_name),
         };
         _cacheTimestamp = now;
 
         return _cachedIndex;
     } catch (e) {
         console.error(`❌ Local DB Error (preload): ${e.message}`);
-        return { keywords: [], channels: [] };
+        return { keywords: [] };
     }
 }
+
 
