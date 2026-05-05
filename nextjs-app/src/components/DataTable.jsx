@@ -495,15 +495,19 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
 
     const handleSuggestionSelect = (suggestion) => {
         const text = suggestion.text;
-        if (!searchTags.includes(text)) {
-            setSearchTags([...searchTags, text]);
-        }
-        setInputValue('');
+        setInputValue(text);
+        
         // Cancel any pending debounced fetch and in-flight request
         if (suggestionsDebounceRef.current) clearTimeout(suggestionsDebounceRef.current);
         if (suggestionsAbortRef.current) suggestionsAbortRef.current.abort();
+        
         setShowSuggestions(false);
         setSuggestions([]);
+        
+        // Focus back to input after selection
+        if (searchInputRef.current) {
+            searchInputRef.current.focus();
+        }
     };
 
     // Close suggestions when clicking outside
