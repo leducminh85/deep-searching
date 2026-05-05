@@ -127,7 +127,6 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
 
     // Lightbox state
     const [selectedThumbnail, setSelectedThumbnail] = useState(null);
-    const [isCaptionColVisible, setIsCaptionColVisible] = useState(false);
 
     const extractMainStory = (summary) => {
         if (!summary || typeof summary !== 'string') return "";
@@ -266,7 +265,6 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         }
 
         if (pageNum === 1) {
-            setIsCaptionColVisible(captionSearch);
             setLoading(true);
             setData([]);
             setProgress(0);
@@ -602,7 +600,6 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         'link': 'Link',
         'views': 'Lượt xem',
         'thumbnail': 'Thumbnail',
-        'caption': 'Phụ đề',
         'summary': 'Phân tích',
         'date published': 'Ngày đăng',
         'published': 'Ngày đăng',
@@ -639,19 +636,16 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
     };
 
     const headers = useMemo(() => {
-        const allHeaders = [
+        return [
             'Title',
             'URL',
             'Views',
             'Thumbnail',
-            'Summary'
+            'Summary',
+            'Date Published',
+            'Channel Name'
         ];
-        if (isCaptionColVisible) {
-            allHeaders.push('Caption');
-        }
-        allHeaders.push('Date Published', 'Channel Name');
-        return allHeaders;
-    }, [isCaptionColVisible]);
+    }, []);
 
     useEffect(() => {
         // Initial fetch handled by the other useEffect depending on appliedTags
@@ -893,7 +887,6 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
 
     const getHeaderClass = (header) => {
         const low = header.toLowerCase();
-        if (low === 'caption') return 'col-caption';
         if (low === 'summary') return 'col-summary';
         if (low === 'thumbnail') return 'col-thumbnail';
         return '';

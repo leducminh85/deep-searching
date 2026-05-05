@@ -14,7 +14,7 @@ export default function HomePageClient({ initialData }) {
   const [highlightEnabled, setHighlightEnabled] = useState(true);
   const [searchMode, setSearchMode] = useState('or');
   const [translateEnabled, setTranslateEnabled] = useState(false);
-  const [captionSearchEnabled, setCaptionSearchEnabled] = useState(true);
+  const [captionSearchEnabled, setCaptionSearchEnabled] = useState(false);
   const [runTour, setRunTour] = useState(false);
 
   const tourSteps = [
@@ -78,7 +78,7 @@ export default function HomePageClient({ initialData }) {
 
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
-    
+
     if (savedHighlight !== null) setHighlightEnabled(savedHighlight === 'true');
     if (savedSearchMode) setSearchMode(savedSearchMode);
     if (savedTranslate !== null) setTranslateEnabled(savedTranslate === 'true');
@@ -245,9 +245,9 @@ export default function HomePageClient({ initialData }) {
       </header>
 
       <main>
-        <DataTable 
-          highlightEnabled={highlightEnabled} 
-          searchMode={searchMode} 
+        <DataTable
+          highlightEnabled={highlightEnabled}
+          searchMode={searchMode}
           translateEnabled={translateEnabled}
           captionSearchEnabled={captionSearchEnabled}
           initialData={initialData}
