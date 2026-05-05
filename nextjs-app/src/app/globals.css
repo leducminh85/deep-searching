@@ -266,7 +266,6 @@ tr:last-child td {
 }
 
 /* Specific Column Widths */
-.col-caption,
 .col-summary {
   min-width: 250px;
   max-width: 400px;
