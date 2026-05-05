@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Youtube, ArrowUp, Search, Filter, X, Plus, Languages } from 'lucide-react';
+import SearchCat from './SearchCat';
 
 
 const removeAccents = (str) => {
@@ -76,6 +77,14 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
     const progressIntervalRef = useRef(null);
     const [inputValue, setInputValue] = useState('');
     const [sortConfig, setSortConfig] = useState({ key: 'date_published', direction: 'desc' });
+
+    // Autocomplete state
+    const [suggestions, setSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+    const suggestionsDebounceRef = useRef(null);
+    const searchWrapperRef = useRef(null);
+    const searchInputRef = useRef(null);
     const [visibleRows, setVisibleRows] = useState(50);
     const [showScrollTop, setShowScrollTop] = useState(false);
 
@@ -334,6 +343,8 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         }
         setAppliedTags(newTags);
         setPage(1);
+        setShowSuggestions(false);
+        setSuggestions([]);
     };
 
     const addTag = (val) => {
@@ -344,6 +355,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         } else {
             setInputValue('');
         }
+        setShowSuggestions(false);
     };
 
     const removeTag = (tagToRemove) => {
@@ -353,7 +365,80 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         setPage(1);
     };
 
+    // Autocomplete: fetch suggestions with debounce
+    const fetchSuggestions = useCallback(async (value) => {
+        if (!value || value.trim().length < 2) {
+            setSuggestions([]);
+            setShowSuggestions(false);
+            return;
+        }
+        try {
+            const res = await fetch(`${API_BASE}/api/suggestions?q=${encodeURIComponent(value.trim())}`);
+            if (res.ok) {
+                const data = await res.json();
+                setSuggestions(data.suggestions || []);
+                setShowSuggestions((data.suggestions || []).length > 0);
+                setActiveSuggestionIndex(-1);
+            }
+        } catch (err) {
+            console.error('Suggestions fetch error:', err);
+        }
+    }, []);
+
+    const handleInputChange = (value) => {
+        setInputValue(value);
+        // Debounce suggestions fetch
+        if (suggestionsDebounceRef.current) {
+            clearTimeout(suggestionsDebounceRef.current);
+        }
+        suggestionsDebounceRef.current = setTimeout(() => {
+            fetchSuggestions(value);
+        }, 150);
+    };
+
+    const handleSuggestionSelect = (suggestion) => {
+        const text = suggestion.text;
+        if (!searchTags.includes(text)) {
+            setSearchTags([...searchTags, text]);
+        }
+        setInputValue('');
+        setShowSuggestions(false);
+        setSuggestions([]);
+    };
+
+    // Close suggestions when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (searchWrapperRef.current && !searchWrapperRef.current.contains(e.target)) {
+                setShowSuggestions(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     const handleKeyDown = (e) => {
+        if (showSuggestions && suggestions.length > 0) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setActiveSuggestionIndex(prev => Math.min(prev + 1, suggestions.length - 1));
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setActiveSuggestionIndex(prev => Math.max(prev - 1, -1));
+                return;
+            }
+            if (e.key === 'Enter' && activeSuggestionIndex >= 0) {
+                e.preventDefault();
+                handleSuggestionSelect(suggestions[activeSuggestionIndex]);
+                return;
+            }
+            if (e.key === 'Escape') {
+                setShowSuggestions(false);
+                return;
+            }
+        }
         if (e.key === ',') {
             e.preventDefault();
             addTag(inputValue);
@@ -827,6 +912,10 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                 </div>
             </div>
 
+            {/* SearchCat rendered outside table-container to avoid overflow:hidden clipping */}
+            {/* SearchCat rendered outside table-container to avoid overflow:hidden clipping */}
+            <SearchCat inputValue={inputValue} searchTags={searchTags} anchorRef={searchWrapperRef} inputRef={searchInputRef} />
+
             <div className="table-container">
                 {(appliedTags.length > 0 || Object.keys(appliedFilters).some(k => appliedFilters[k] && (Array.isArray(appliedFilters[k]) ? appliedFilters[k].length > 0 : true))) && (
                     <div style={{
@@ -868,7 +957,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                     </div>
                 )}
                 <div className="toolbar" style={{ gap: '1rem', flexWrap: 'wrap' }}>
-                    <div className="search-wrapper" style={{
+                    <div className="search-wrapper" ref={searchWrapperRef} style={{
                         flex: 1,
                         position: 'relative',
                         display: 'flex',
@@ -881,6 +970,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                         minHeight: '48px',
                         flexWrap: 'wrap'
                     }}>
+
                         {searchTags.map((tag, index) => (
                             <span key={index} style={{
                                 background: `hsl(${(index * 137) % 360}, 70%, 50%)`,
@@ -913,12 +1003,14 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                             </span>
                         ))}
                         <input
+                            ref={searchInputRef}
                             type="text"
                             className="search-input"
                             placeholder={searchTags.length === 0 ? "Nhập từ khóa tìm kiếm (dùng dấu phẩy để tách tag)..." : ""}
                             value={inputValue}
-                            onChange={(e) => setInputValue(e.target.value)}
+                            onChange={(e) => handleInputChange(e.target.value)}
                             onKeyDown={handleKeyDown}
+                            onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
                             style={{
                                 flex: 1,
                                 minWidth: '150px',
@@ -963,6 +1055,48 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                                 <Search size={18} />
                             </button>
                         </div>
+
+                        {/* Autocomplete Dropdown */}
+                        {showSuggestions && suggestions.length > 0 && (
+                            <div className="autocomplete-dropdown">
+                                {suggestions.map((item, idx) => {
+                                    const matchIndex = item.text.toLowerCase().indexOf(inputValue.toLowerCase());
+                                    let textContent;
+                                    if (matchIndex >= 0) {
+                                        const before = item.text.slice(0, matchIndex);
+                                        const match = item.text.slice(matchIndex, matchIndex + inputValue.length);
+                                        const after = item.text.slice(matchIndex + inputValue.length);
+                                        textContent = <>{before}<span className="match">{match}</span>{after}</>;
+                                    } else {
+                                        textContent = item.text;
+                                    }
+
+                                    return (
+                                        <div
+                                            key={idx}
+                                            className={`autocomplete-item ${idx === activeSuggestionIndex ? 'active' : ''}`}
+                                            onClick={() => handleSuggestionSelect(item)}
+                                            onMouseEnter={() => setActiveSuggestionIndex(idx)}
+                                        >
+                                            <div className={`autocomplete-item-icon ${item.type}`}>
+                                                {item.type === 'channel' ? '📺' : '🔍'}
+                                            </div>
+                                            <span className="autocomplete-item-text">
+                                                {textContent}
+                                            </span>
+                                            {item.count && (
+                                                <span className="autocomplete-item-count">
+                                                    {item.count}
+                                                </span>
+                                            )}
+                                            <span className="autocomplete-item-type">
+                                                {item.type === 'channel' ? 'Kênh' : 'Từ khóa'}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
 
                     <button

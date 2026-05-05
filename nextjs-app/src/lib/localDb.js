@@ -177,3 +177,60 @@ export async function getChannels() {
         return [];
     }
 }
+
+/**
+ * Get search suggestions based on partial input.
+ * Returns matching keywords (from FTS lexemes) and channel names.
+ */
+export async function getSuggestions(query) {
+    const db = getPool();
+    try {
+        const lowerQuery = query.toLowerCase();
+        const prefixPattern = `${lowerQuery}%`;
+        const likePattern = `%${lowerQuery}%`;
+
+        // Extract individual keywords from the FTS tsvector using ts_stat
+        // This returns distinct lexemes (words) that appear in video data
+        const keywordResult = await db.query(
+            `SELECT word, nentry 
+             FROM ts_stat('SELECT fts_no_caption FROM videos') 
+             WHERE word LIKE $1 AND length(word) >= 2
+             ORDER BY nentry DESC 
+             LIMIT 8`,
+            [prefixPattern]
+        );
+
+        // Also get matching channel names
+        const channelResult = await db.query(
+            `SELECT DISTINCT channel_name FROM videos 
+             WHERE channel_name ILIKE $1 AND channel_name IS NOT NULL AND channel_name != ''
+             ORDER BY channel_name 
+             LIMIT 3`,
+            [likePattern]
+        );
+
+        const suggestions = [];
+
+        // Add channel suggestions
+        channelResult.rows.forEach(r => {
+            suggestions.push({
+                text: r.channel_name,
+                type: 'channel',
+            });
+        });
+
+        // Add keyword suggestions
+        keywordResult.rows.forEach(r => {
+            suggestions.push({
+                text: r.word,
+                type: 'keyword',
+                count: r.nentry,
+            });
+        });
+
+        return suggestions;
+    } catch (e) {
+        console.error(`❌ Local DB Error (suggestions): ${e.message}`);
+        return [];
+    }
+}
