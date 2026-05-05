@@ -19,6 +19,7 @@ const SearchCat = ({ inputValue, searchTags, knownWords = new Set(), anchorRef, 
     const [isCheckerReady, setIsCheckerReady] = useState(false);
     const hideTimeoutRef = useRef(null);
     const prevTagsRef = useRef([]);
+    const appearTimeRef = useRef(0);
 
     // Initialize spell checker
     useEffect(() => {
@@ -48,90 +49,62 @@ const SearchCat = ({ inputValue, searchTags, knownWords = new Set(), anchorRef, 
 
     // Analyze searchTags when they change
     useEffect(() => {
-        const prevLen = prevTagsRef.current.length;
-        const currLen = searchTags.length;
-
-        // No change in tags count = user is typing, not completing a tag
-        if (currLen === prevLen) {
-            // If the user is typing, hide the cat so it doesn't block
-            if (inputValue.trim().length > 0 && visible) {
-                setIsLeaving(true);
-                if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-                hideTimeoutRef.current = setTimeout(() => {
-                    setVisible(false);
-                    setMessage(null);
-                }, 500);
-            }
-            return;
-        }
-
-        // Tags were REMOVED — just update ref and hide, do NOT check
-        if (currLen < prevLen) {
-            prevTagsRef.current = [...searchTags];
+        if (searchTags.length === 0) {
             setVisible(false);
             setMessage(null);
+            prevTagsRef.current = [];
             return;
         }
 
-        // Tags were ADDED — this is when we check
         prevTagsRef.current = [...searchTags];
-
-        const lastTag = searchTags[currLen - 1];
         let newMessage = null;
 
-        // Rule 1: Keyword too long (>= 3 words)
-        const words = lastTag.split(/\s+/).filter(w => w);
-        if (words.length >= 3) {
-            newMessage = {
-                type: 'long',
-                text: `Meo~! Từ khóa "${lastTag}" hơi dài đó 🐱 Lần sau thử tách nhỏ ra sẽ tìm chính xác hơn nha!`,
-            };
-        }
+        // Scan ALL tags for issues, prioritizing the first one found
+        for (const tag of searchTags) {
+            const words = tag.split(/\s+/).filter(w => w);
 
-        // Rule 2: Spell check using typo-js (only if no long-keyword warning)
-        if (!newMessage && isCheckerReady) {
-            for (const word of words) {
-                const lowerWord = word.toLowerCase();
-                // Skip very short words and numbers
-                if (lowerWord.length < 3 || /^\d+$/.test(lowerWord)) continue;
+            // Rule 1: Keyword too long (>= 3 words)
+            if (words.length >= 3) {
+                newMessage = {
+                    type: 'long',
+                    text: `Meo~! Từ khóa "${tag}" vẫn còn hơi dài đó 🐱 Hãy chia nhỏ nó ra nhé!`,
+                };
+                break;
+            }
 
-                // If the keyword was ever seen in autocomplete suggestions, it's valid
-                if (knownWords.has(lowerWord)) continue;
+            // Rule 2: Spell check using typo-js
+            if (isCheckerReady) {
+                for (const word of words) {
+                    const lowerWord = word.toLowerCase();
+                    if (lowerWord.length < 3 || /^\d+$/.test(lowerWord)) continue;
+                    if (knownWords.has(lowerWord)) continue;
 
-                // Check actual spelling via typo-js dictionary
-                if (!checkSpelling(lowerWord)) {
-                    newMessage = {
-                        type: 'typo',
-                        text: `Meo~? Hình như từ "${word}" bị viết sai chính tả rồi kìa 😿`,
-                    };
-                    break;
+                    if (!checkSpelling(lowerWord)) {
+                        newMessage = {
+                            type: 'typo',
+                            text: `Meo~? Từ "${word}" đang bị sai chính tả kìa, sửa lại đi nhé 😿`,
+                        };
+                        break;
+                    }
                 }
             }
-        }
-
-        if (hideTimeoutRef.current) {
-            clearTimeout(hideTimeoutRef.current);
-            hideTimeoutRef.current = null;
+            if (newMessage) break;
         }
 
         if (newMessage) {
             setIsLeaving(false);
             setMessage(newMessage);
             setVisible(true);
-            
-            // Auto hide after 8 seconds
-            hideTimeoutRef.current = setTimeout(() => {
-                setIsLeaving(true);
-                setTimeout(() => {
-                    setVisible(false);
-                    setMessage(null);
-                }, 500);
-            }, 8000);
+            appearTimeRef.current = Date.now();
         } else {
-            setVisible(false);
-            setMessage(null);
+            // No issues found in any tags -> hide
+            setIsLeaving(true);
+            setTimeout(() => {
+                setVisible(false);
+                setMessage(null);
+            }, 500);
         }
-    }, [searchTags, inputValue]);
+    }, [searchTags.join('|'), isCheckerReady, knownWords]);
 
     if (!visible || !message) return null;
 
