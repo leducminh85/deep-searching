@@ -16,8 +16,9 @@ FILE_PATH = "data.xlsx"
 SHEET_NAME = "NEW_CACHE_DATA_HIDDEN_"
 MAX_WORKERS = 4      # QUAN TRỌNG: Đã đổi thành 1 luồng để tránh tràn VRAM khi AI đọc đoạn text dài
 SAVE_EVERY = 2        
-MAX_TEST_VIDEOS = 1  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
+MAX_TEST_VIDEOS = 10000  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
 COOKIES_FILE = "cookies.txt"  # File cookies từ trình duyệt để YouTube không chặn
+COOKIES_FILE_2 = "cookies2.txt" # File cookies dự phòng
 
 # Biến toàn cục
 stop_flag = False
@@ -43,91 +44,101 @@ def clean_for_excel(text):
 
 def fetch_caption(video_url, row_idx):
     """Lấy caption dùng yt-dlp + Cookies, xử lý triệt để lỗi"""
-    ydl_opts = {
+    cookies_to_try = [COOKIES_FILE]
+    if os.path.exists(COOKIES_FILE_2) and COOKIES_FILE_2 != COOKIES_FILE:
+        cookies_to_try.append(COOKIES_FILE_2)
+    
+    for cookie_path in cookies_to_try:
+        ydl_opts = {
             'skip_download': True,
             'quiet': True,
             'no_warnings': True,
             'ignore_no_formats_error': True,
         }
-    
-    # Tích hợp cookies để YouTube không yêu cầu xác minh bot
-    if os.path.exists(COOKIES_FILE):
-        ydl_opts['cookiefile'] = COOKIES_FILE
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            
-        if not info:
-            print(f"[Dòng {row_idx}] ❌ Lỗi: Không thể truy cập dữ liệu video.")
-            return None
-            
-        subs = info.get('subtitles', {})
-        auto_subs = info.get('automatic_captions', {})
         
-        sub_url = None
+        if os.path.exists(cookie_path):
+            ydl_opts['cookiefile'] = cookie_path
         
-        # 1. Tìm phụ đề thủ công (ưu tiên en, en-US, en-GB...)
-        target_langs = [k for k in subs.keys() if k.lower().startswith('en')]
-        if target_langs:
-            preferred = 'en' if 'en' in target_langs else target_langs[0]
-            for f in subs[preferred]:
-                if f.get('ext') in ['json3', 'json']:
-                    sub_url = f['url']
-                    break
-                    
-        # 2. Tìm phụ đề tự động (auto-generated)
-        if not sub_url:
-            for lang in auto_subs.keys():
-                if lang.startswith('en'):  
-                    for f in auto_subs[lang]:
-                        if f.get('ext') in ['json3', 'json']:
-                            sub_url = f['url']
-                            break
-                    if sub_url: break
-
-        if not sub_url:
-            print(f"[Dòng {row_idx}] ⚠️ Lỗi: Video KHÔNG CÓ phụ đề tiếng Anh.")
-            return None
-            
-        # 3. Tải và xử lý file phụ đề (dùng yt-dlp urlopen để gửi cookies tự động)
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl2:
-                sub_data = ydl2.urlopen(sub_url).read().decode('utf-8')
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(video_url, download=False)
+                
+            if not info:
+                 continue
+
+            subs = info.get('subtitles', {})
+            auto_subs = info.get('automatic_captions', {})
             
-            res = json.loads(sub_data)
+            sub_url = None
+            # 1. Tìm phụ đề thủ công (ưu tiên en, en-US, en-GB...)
+            target_langs = [k for k in subs.keys() if k.lower().startswith('en')]
+            if target_langs:
+                preferred = 'en' if 'en' in target_langs else target_langs[0]
+                for f in subs[preferred]:
+                    if f.get('ext') in ['json3', 'json']:
+                        sub_url = f['url']
+                        break
+            
+            # 2. Tìm phụ đề tự động (auto-generated)
+            if not sub_url:
+                for lang in auto_subs.keys():
+                    if lang.startswith('en'):  
+                        for f in auto_subs[lang]:
+                            if f.get('ext') in ['json3', 'json']:
+                                sub_url = f['url']
+                                break
+                        if sub_url: break
+
+            if not sub_url:
+                if cookie_path == COOKIES_FILE and len(cookies_to_try) > 1:
+                    print(f"[Dòng {row_idx}] 🔄 Không thấy phụ đề với {cookie_path}, thử lại với {COOKIES_FILE_2}...")
+                    continue
+                else:
+                    print(f"[Dòng {row_idx}] ⚠️ Lỗi: Video KHÔNG CÓ phụ đề tiếng Anh.")
+                    return "#" # Trả về # để bỏ qua vĩnh viễn dòng này
+
+            # 3. Tải và xử lý file phụ đề (dùng yt-dlp urlopen để gửi cookies tự động)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl2:
+                    sub_data = ydl2.urlopen(sub_url).read().decode('utf-8')
+                res = json.loads(sub_data)
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "Too Many Requests" in err_str:
+                    return "IP_BLOCKED"
+                print(f"[Dòng {row_idx}] ❌ Lỗi tải phụ đề với {cookie_path}: {err_str[:80]}")
+                if cookie_path == COOKIES_FILE and len(cookies_to_try) > 1:
+                    continue
+                return "#"
+                
+            text_chunks = []
+            for event in res.get('events', []):
+                if 'segs' in event:
+                    for seg in event['segs']:
+                        if 'utf8' in seg:
+                            text_chunks.append(seg['utf8'])
+                            
+            full_text = "".join(text_chunks).replace('\n', ' ')
+            full_text = ' '.join(full_text.split()) 
+            
+            return full_text[:30000] # Cắt bớt nếu quá dài để tránh tràn RAM khi đưa vào AI
             
         except Exception as e:
-            err_str = str(e)
-            if "429" in err_str or "Too Many Requests" in err_str:
-                print(f"[Dòng {row_idx}] ⛔ IP bị YouTube chặn (429).")
+            error_msg = str(e).lower()
+            if "too many requests" in error_msg or "http error 429" in error_msg:
                 return "IP_BLOCKED"
-            print(f"[Dòng {row_idx}] ❌ Lỗi tải phụ đề: {err_str[:80]}")
-            return None
             
-        text_chunks = []
-        for event in res.get('events', []):
-            if 'segs' in event:
-                for seg in event['segs']:
-                    if 'utf8' in seg:
-                        text_chunks.append(seg['utf8'])
-                        
-        full_text = "".join(text_chunks).replace('\n', ' ')
-        full_text = ' '.join(full_text.split()) 
-        
-        return full_text[:30000] # Cắt bớt nếu quá dài để tránh tràn RAM khi đưa vào AI
-        
-    except Exception as e:
-        error_msg = str(e).lower()
-        if "unavailable" in error_msg or "private" in error_msg or "removed" in error_msg:
-            print(f"[Dòng {row_idx}] ❌ Lỗi: Video không tồn tại, bị xóa hoặc đã chuyển sang riêng tư.")
-        elif "too many requests" in error_msg or "http error 429" in error_msg:
-            return "IP_BLOCKED"
-        elif "sign in" in error_msg or "age" in error_msg or "bot" in error_msg:
-            print(f"[Dòng {row_idx}] ❌ Lỗi: Video giới hạn độ tuổi hoặc bắt xác minh. Kiểm tra lại cookies.txt!")
-        else:
-            print(f"[Dòng {row_idx}] ❌ Lỗi yt-dlp: {str(e).splitlines()[0][:80]}")
-        return None
+            if "unavailable" in error_msg or "private" in error_msg or "removed" in error_msg:
+                print(f"[Dòng {row_idx}] ❌ Lỗi: Video không tồn tại hoặc bị giới hạn.")
+                return "#"
+                
+            print(f"[Dòng {row_idx}] ❌ Lỗi yt-dlp với {cookie_path}: {str(e).splitlines()[0][:80]}")
+            if cookie_path == COOKIES_FILE and len(cookies_to_try) > 1:
+                print(f"  -> Thử lại với {COOKIES_FILE_2}...")
+                continue
+            return "#"
+
+    return "#"
 
 def generate_summary(caption_text, row_idx):
     """Sử dụng Ollama (Local AI) để đọc caption và trích xuất cấu trúc câu chuyện"""
@@ -206,7 +217,7 @@ def process_row(row_idx, url, existing_caption, existing_summary):
             return row_idx, "ABORTED", "ABORTED"
             
         if not final_caption:
-            final_caption = "#"
+            final_caption = ""
 
     # 2. Xử lý Summary (Chỉ chạy khi đã có caption và chưa có summary hợp lệ)
     if final_caption and final_caption != "#" and final_caption != "ERROR":
@@ -214,7 +225,7 @@ def process_row(row_idx, url, existing_caption, existing_summary):
             print(f"  [Dòng {row_idx}] 🤖 Llama 3.2 3B đang đọc và tóm tắt nội dung...")
             final_summary = generate_summary(final_caption, row_idx)
     else:
-        final_summary = "#" # Nếu video lỗi không có caption thì summary cũng bỏ qua
+        final_summary = "" # Nếu video lỗi không có caption thì summary cũng bỏ qua
 
     with lock:
         success_count += 1
@@ -229,6 +240,9 @@ def main():
         print(f"✅ Đã tìm thấy file cookies: {COOKIES_FILE}")
     else:
         print(f"⚠️ Cảnh báo: Không tìm thấy {COOKIES_FILE}. Có thể bị YouTube chặn!")
+    
+    if os.path.exists(COOKIES_FILE_2):
+        print(f"✅ Đã tìm thấy file cookies dự phòng: {COOKIES_FILE_2}")
     
     print(f"Đang đọc dữ liệu từ {FILE_PATH}...")
     try:
