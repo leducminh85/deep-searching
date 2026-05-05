@@ -9,65 +9,21 @@ import React, { useState, useEffect, useRef } from 'react';
  * - Keywords might have typos → identifies the misspelled word (without guessing)
  */
 
-const COMMON_SEARCH_WORDS = [
-    'video', 'music', 'news', 'tutorial', 'review', 'react', 'gaming', 'movie',
-    'trailer', 'comedy', 'drama', 'anime', 'vlog', 'podcast', 'interview',
-    'documentary', 'live', 'stream', 'highlight', 'compilation', 'analysis',
-    'breakdown', 'explained', 'summary', 'technology', 'science', 'history',
-    'politics', 'economy', 'finance', 'crypto', 'bitcoin', 'stock', 'market',
-    'trump', 'biden', 'china', 'russia', 'ukraine', 'war', 'peace', 'trade',
-    'tariff', 'election', 'debate', 'congress', 'senate', 'president',
-    'inflation', 'recession', 'investment', 'startup', 'artificial', 'intelligence',
-    'machine', 'learning', 'deep', 'search', 'youtube', 'channel', 'subscribe',
-    'world', 'global', 'international', 'national', 'breaking', 'update',
-    'latest', 'today', 'week', 'month', 'year', 'best', 'worst', 'top',
-];
+import { initSpellChecker, checkSpelling } from '@/lib/dictionary';
 
-function levenshteinDistance(a, b) {
-    const matrix = [];
-    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-
-    for (let i = 1; i <= b.length; i++) {
-        for (let j = 1; j <= a.length; j++) {
-            if (b.charAt(i - 1) === a.charAt(j - 1)) {
-                matrix[i][j] = matrix[i - 1][j - 1];
-            } else {
-                matrix[i][j] = Math.min(
-                    matrix[i - 1][j - 1] + 1,
-                    matrix[i][j - 1] + 1,
-                    matrix[i - 1][j] + 1
-                );
-            }
-        }
-    }
-    return matrix[b.length][a.length];
-}
-
-function isLikelyTypo(word) {
-    const lowerWord = word.toLowerCase();
-    if (lowerWord.length < 3) return false;
-    
-    // If it's in dictionary, it's correct
-    if (COMMON_SEARCH_WORDS.includes(lowerWord)) return false;
-
-    // If it's VERY close to a dictionary word (distance 1 or 2), it's likely a typo
-    for (const dictWord of COMMON_SEARCH_WORDS) {
-        const dist = levenshteinDistance(lowerWord, dictWord);
-        if (dist > 0 && dist <= 2) {
-            return true;
-        }
-    }
-    return false;
-}
-
-const SearchCat = ({ inputValue, searchTags, anchorRef, inputRef }) => {
+const SearchCat = ({ inputValue, searchTags, knownWords = new Set(), anchorRef, inputRef }) => {
     const [message, setMessage] = useState(null);
     const [visible, setVisible] = useState(false);
     const [isLeaving, setIsLeaving] = useState(false);
     const [position, setPosition] = useState({ top: 0, left: 0 });
+    const [isCheckerReady, setIsCheckerReady] = useState(false);
     const hideTimeoutRef = useRef(null);
     const prevTagsRef = useRef([]);
+
+    // Initialize spell checker
+    useEffect(() => {
+        initSpellChecker().then(() => setIsCheckerReady(true));
+    }, []);
 
     // Update position based on inputRef (near the input)
     useEffect(() => {
@@ -92,9 +48,12 @@ const SearchCat = ({ inputValue, searchTags, anchorRef, inputRef }) => {
 
     // Analyze searchTags when they change
     useEffect(() => {
-        // Only trigger if tags changed (not typing)
-        if (searchTags.length === prevTagsRef.current.length) {
-            // However, if the user is typing, we might want to hide the cat
+        const prevLen = prevTagsRef.current.length;
+        const currLen = searchTags.length;
+
+        // No change in tags count = user is typing, not completing a tag
+        if (currLen === prevLen) {
+            // If the user is typing, hide the cat so it doesn't block
             if (inputValue.trim().length > 0 && visible) {
                 setIsLeaving(true);
                 if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
@@ -106,15 +65,18 @@ const SearchCat = ({ inputValue, searchTags, anchorRef, inputRef }) => {
             return;
         }
 
-        prevTagsRef.current = searchTags;
-
-        if (searchTags.length === 0) {
+        // Tags were REMOVED — just update ref and hide, do NOT check
+        if (currLen < prevLen) {
+            prevTagsRef.current = [...searchTags];
             setVisible(false);
             setMessage(null);
             return;
         }
 
-        const lastTag = searchTags[searchTags.length - 1];
+        // Tags were ADDED — this is when we check
+        prevTagsRef.current = [...searchTags];
+
+        const lastTag = searchTags[currLen - 1];
         let newMessage = null;
 
         // Rule 1: Keyword too long (>= 3 words)
@@ -126,13 +88,21 @@ const SearchCat = ({ inputValue, searchTags, anchorRef, inputRef }) => {
             };
         }
 
-        // Rule 2: Spell check (Identify only)
-        if (!newMessage) {
+        // Rule 2: Spell check using typo-js (only if no long-keyword warning)
+        if (!newMessage && isCheckerReady) {
             for (const word of words) {
-                if (isLikelyTypo(word)) {
+                const lowerWord = word.toLowerCase();
+                // Skip very short words and numbers
+                if (lowerWord.length < 3 || /^\d+$/.test(lowerWord)) continue;
+
+                // If the keyword was ever seen in autocomplete suggestions, it's valid
+                if (knownWords.has(lowerWord)) continue;
+
+                // Check actual spelling via typo-js dictionary
+                if (!checkSpelling(lowerWord)) {
                     newMessage = {
                         type: 'typo',
-                        text: `Meo~? Hình như từ "${word}" trong từ khóa bạn vừa nhập bị viết sai chính tả rồi kìa 😿`,
+                        text: `Meo~? Hình như từ "${word}" bị viết sai chính tả rồi kìa 😿`,
                     };
                     break;
                 }

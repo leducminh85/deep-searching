@@ -85,6 +85,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
     const suggestionsDebounceRef = useRef(null);
     const searchWrapperRef = useRef(null);
     const searchInputRef = useRef(null);
+    const seenSuggestionsRef = useRef(new Set());
     const [visibleRows, setVisibleRows] = useState(50);
     const [showScrollTop, setShowScrollTop] = useState(false);
 
@@ -376,8 +377,11 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
             const res = await fetch(`${API_BASE}/api/suggestions?q=${encodeURIComponent(value.trim())}`);
             if (res.ok) {
                 const data = await res.json();
-                setSuggestions(data.suggestions || []);
-                setShowSuggestions((data.suggestions || []).length > 0);
+                const items = data.suggestions || [];
+                setSuggestions(items);
+                // Accumulate all seen suggestion words for spell-check
+                items.forEach(s => seenSuggestionsRef.current.add(s.text.toLowerCase()));
+                setShowSuggestions(items.length > 0);
                 setActiveSuggestionIndex(-1);
             }
         } catch (err) {
@@ -393,7 +397,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         }
         suggestionsDebounceRef.current = setTimeout(() => {
             fetchSuggestions(value);
-        }, 150);
+        }, 50);
     };
 
     const handleSuggestionSelect = (suggestion) => {
@@ -914,7 +918,14 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
 
             {/* SearchCat rendered outside table-container to avoid overflow:hidden clipping */}
             {/* SearchCat rendered outside table-container to avoid overflow:hidden clipping */}
-            <SearchCat inputValue={inputValue} searchTags={searchTags} anchorRef={searchWrapperRef} inputRef={searchInputRef} />
+            {/* SearchCat rendered outside table-container to avoid overflow:hidden clipping */}
+            <SearchCat 
+                inputValue={inputValue} 
+                searchTags={searchTags} 
+                knownWords={seenSuggestionsRef.current}
+                anchorRef={searchWrapperRef} 
+                inputRef={searchInputRef} 
+            />
 
             <div className="table-container">
                 {(appliedTags.length > 0 || Object.keys(appliedFilters).some(k => appliedFilters[k] && (Array.isArray(appliedFilters[k]) ? appliedFilters[k].length > 0 : true))) && (
@@ -1002,26 +1013,70 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                                 </button>
                             </span>
                         ))}
-                        <input
-                            ref={searchInputRef}
-                            type="text"
-                            className="search-input"
-                            placeholder={searchTags.length === 0 ? "Nhập từ khóa tìm kiếm (dùng dấu phẩy để tách tag)..." : ""}
-                            value={inputValue}
-                            onChange={(e) => handleInputChange(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
-                            style={{
-                                flex: 1,
-                                minWidth: '150px',
-                                border: 'none',
-                                background: 'transparent',
-                                outline: 'none',
-                                color: 'var(--text-color)',
-                                padding: '4px 0',
-                                height: 'auto'
-                            }}
-                        />
+                        <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+                            <input
+                                ref={searchInputRef}
+                                type="text"
+                                className="search-input"
+                                placeholder={searchTags.length === 0 ? "Nhập từ khóa tìm kiếm (dùng dấu phẩy để tách tag)..." : ""}
+                                value={inputValue}
+                                onChange={(e) => handleInputChange(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+                                style={{
+                                    flex: 1,
+                                    minWidth: '150px',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    outline: 'none',
+                                    color: 'var(--text-color)',
+                                    padding: '4px 0',
+                                    height: 'auto'
+                                }}
+                            />
+
+                            {/* Autocomplete Dropdown - now relative to input area */}
+                            {showSuggestions && suggestions.length > 0 && (
+                                <div className="autocomplete-dropdown">
+                                    {suggestions.map((item, idx) => {
+                                        const matchIndex = item.text.toLowerCase().indexOf(inputValue.toLowerCase());
+                                        let textContent;
+                                        if (matchIndex >= 0) {
+                                            const before = item.text.slice(0, matchIndex);
+                                            const match = item.text.slice(matchIndex, matchIndex + inputValue.length);
+                                            const after = item.text.slice(matchIndex + inputValue.length);
+                                            textContent = <>{before}<span className="match">{match}</span>{after}</>;
+                                        } else {
+                                            textContent = item.text;
+                                        }
+
+                                        return (
+                                            <div
+                                                key={idx}
+                                                className={`autocomplete-item ${idx === activeSuggestionIndex ? 'active' : ''}`}
+                                                onClick={() => handleSuggestionSelect(item)}
+                                                onMouseEnter={() => setActiveSuggestionIndex(idx)}
+                                            >
+                                                <div className={`autocomplete-item-icon ${item.type}`}>
+                                                    {item.type === 'channel' ? '📺' : '🔍'}
+                                                </div>
+                                                <span className="autocomplete-item-text">
+                                                    {textContent}
+                                                </span>
+                                                {item.count && (
+                                                    <span className="autocomplete-item-count">
+                                                        {item.count}
+                                                    </span>
+                                                )}
+                                                <span className="autocomplete-item-type">
+                                                    {item.type === 'channel' ? 'Kênh' : 'Từ khóa'}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -1055,48 +1110,6 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                                 <Search size={18} />
                             </button>
                         </div>
-
-                        {/* Autocomplete Dropdown */}
-                        {showSuggestions && suggestions.length > 0 && (
-                            <div className="autocomplete-dropdown">
-                                {suggestions.map((item, idx) => {
-                                    const matchIndex = item.text.toLowerCase().indexOf(inputValue.toLowerCase());
-                                    let textContent;
-                                    if (matchIndex >= 0) {
-                                        const before = item.text.slice(0, matchIndex);
-                                        const match = item.text.slice(matchIndex, matchIndex + inputValue.length);
-                                        const after = item.text.slice(matchIndex + inputValue.length);
-                                        textContent = <>{before}<span className="match">{match}</span>{after}</>;
-                                    } else {
-                                        textContent = item.text;
-                                    }
-
-                                    return (
-                                        <div
-                                            key={idx}
-                                            className={`autocomplete-item ${idx === activeSuggestionIndex ? 'active' : ''}`}
-                                            onClick={() => handleSuggestionSelect(item)}
-                                            onMouseEnter={() => setActiveSuggestionIndex(idx)}
-                                        >
-                                            <div className={`autocomplete-item-icon ${item.type}`}>
-                                                {item.type === 'channel' ? '📺' : '🔍'}
-                                            </div>
-                                            <span className="autocomplete-item-text">
-                                                {textContent}
-                                            </span>
-                                            {item.count && (
-                                                <span className="autocomplete-item-count">
-                                                    {item.count}
-                                                </span>
-                                            )}
-                                            <span className="autocomplete-item-type">
-                                                {item.type === 'channel' ? 'Kênh' : 'Từ khóa'}
-                                            </span>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
                     </div>
 
                     <button
