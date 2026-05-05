@@ -3,10 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 /**
- * SearchCat — A cute animated cat assistant that sits above the search bar
- * and gives suggestions WHILE TYPING:
- * - Keywords are too long (>= 3 words) → suggests splitting
- * - Keywords might have typos → identifies the misspelled word (without guessing)
+ * SearchCat — A futuristic holographic cat assistant
+ * Translucent blue with glowing effects and rich animations
  */
 
 import { initSpellChecker, checkSpelling } from '@/lib/dictionary';
@@ -59,20 +57,18 @@ const SearchCat = ({ inputValue, searchTags, knownWords = new Set(), anchorRef, 
         prevTagsRef.current = [...searchTags];
         let newMessage = null;
 
-        // Scan ALL tags for issues, prioritizing the first one found
+        // Scan ALL tags for issues
         for (const tag of searchTags) {
             const words = tag.split(/\s+/).filter(w => w);
 
-            // Rule 1: Keyword too long (>= 3 words)
             if (words.length >= 3) {
                 newMessage = {
                     type: 'long',
-                    text: `Meo~! Từ khóa "${tag}" vẫn còn hơi dài đó 🐱 Hãy chia nhỏ nó ra nhé!`,
+                    text: `Từ khóa "${tag}" dài nên sẽ hơi khó tìm kiếm đó 🐱 Nên chia nó ra thành nhiều từ nhỏ nhé!`,
                 };
                 break;
             }
 
-            // Rule 2: Spell check using typo-js
             if (isCheckerReady) {
                 for (const word of words) {
                     const lowerWord = word.toLowerCase();
@@ -82,7 +78,7 @@ const SearchCat = ({ inputValue, searchTags, knownWords = new Set(), anchorRef, 
                     if (!checkSpelling(lowerWord)) {
                         newMessage = {
                             type: 'typo',
-                            text: `Meo~? Từ "${word}" đang bị sai chính tả kìa, sửa lại đi nhé 😿`,
+                            text: `Từ "${word}" đang bị sai chính tả kìa, sửa lại đi nhé 😿`,
                         };
                         break;
                     }
@@ -97,7 +93,6 @@ const SearchCat = ({ inputValue, searchTags, knownWords = new Set(), anchorRef, 
             setVisible(true);
             appearTimeRef.current = Date.now();
         } else {
-            // No issues found in any tags -> hide
             setIsLeaving(true);
             setTimeout(() => {
                 setVisible(false);
@@ -117,37 +112,78 @@ const SearchCat = ({ inputValue, searchTags, knownWords = new Set(), anchorRef, 
                 left: `${position.left}px`,
             }}
         >
-            {/* The Cat First */}
-            <div className="cat-character">
-                <div className="cat-body">
-                    <div className="cat-ear cat-ear-left" />
-                    <div className="cat-ear cat-ear-right" />
-                    <div className="cat-head">
-                        <div className="cat-eyes">
-                            <div className="cat-eye"><div className="cat-pupil" /></div>
-                            <div className="cat-eye"><div className="cat-pupil" /></div>
+            {/* Holographic Cat */}
+            <div className="holo-cat">
+                {/* Glow base */}
+                <div className="holo-cat-glow" />
+
+                {/* Scan line overlay */}
+                <div className="holo-cat-scanlines" />
+
+                {/* Ears */}
+                <div className="holo-ear holo-ear-left">
+                    <div className="holo-ear-inner" />
+                </div>
+                <div className="holo-ear holo-ear-right">
+                    <div className="holo-ear-inner" />
+                </div>
+
+                {/* Head */}
+                <div className="holo-head">
+                    {/* Eyes */}
+                    <div className="holo-eyes">
+                        <div className="holo-eye">
+                            <div className="holo-eye-glow" />
+                            <div className="holo-pupil" />
                         </div>
-                        <div className="cat-nose" />
-                        <div className="cat-mouth" />
-                        <div className="cat-whiskers-left">
-                            <div className="whisker" /><div className="whisker" /><div className="whisker" />
-                        </div>
-                        <div className="cat-whiskers-right">
-                            <div className="whisker" /><div className="whisker" /><div className="whisker" />
+                        <div className="holo-eye">
+                            <div className="holo-eye-glow" />
+                            <div className="holo-pupil" />
                         </div>
                     </div>
-                    <div className="cat-paws">
-                        <div className="cat-paw cat-paw-left" />
-                        <div className="cat-paw cat-paw-right" />
+
+                    {/* Nose */}
+                    <div className="holo-nose" />
+
+                    {/* Mouth */}
+                    <div className="holo-mouth">
+                        <div className="holo-mouth-line" />
+                    </div>
+
+                    {/* Whiskers */}
+                    <div className="holo-whiskers holo-whiskers-left">
+                        <span /><span /><span />
+                    </div>
+                    <div className="holo-whiskers holo-whiskers-right">
+                        <span /><span /><span />
                     </div>
                 </div>
-                <div className="cat-tail" />
+
+                {/* Paws */}
+                <div className="holo-paws">
+                    <div className="holo-paw" />
+                    <div className="holo-paw" />
+                </div>
+
+                {/* Tail */}
+                <div className="holo-tail" />
+
+                {/* Floating particles */}
+                <div className="holo-particles">
+                    <span className="particle p1" />
+                    <span className="particle p2" />
+                    <span className="particle p3" />
+                    <span className="particle p4" />
+                    <span className="particle p5" />
+                </div>
             </div>
 
-            {/* Speech Bubble Second (to the right) */}
-            <div className="cat-speech-bubble">
+            {/* Holographic Speech Bubble */}
+            <div className="holo-speech-bubble">
+                <div className="holo-bubble-border" />
                 <p>{message.text}</p>
-                <div className="speech-bubble-tail" />
+                <div className="holo-bubble-tail" />
+                <div className="holo-bubble-scanlines" />
             </div>
         </div>
     );
