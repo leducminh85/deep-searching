@@ -57,19 +57,10 @@ const SearchCat = ({ inputValue, searchTags, knownWords = new Set(), anchorRef, 
         prevTagsRef.current = [...searchTags];
         let newMessage = null;
 
-        // Scan ALL tags for issues
-        for (const tag of searchTags) {
-            const words = tag.split(/\s+/).filter(w => w);
-
-            if (words.length >= 3) {
-                newMessage = {
-                    type: 'long',
-                    text: `Từ khóa "${tag}" dài nên sẽ hơi khó tìm kiếm đó 🐱 Nên chia nó ra thành nhiều từ nhỏ nhé!`,
-                };
-                break;
-            }
-
-            if (isCheckerReady) {
+        // Scan ALL tags for typos FIRST (Higher priority)
+        if (isCheckerReady) {
+            for (const tag of searchTags) {
+                const words = tag.split(/\s+/).filter(w => w);
                 for (const word of words) {
                     const lowerWord = word.toLowerCase();
                     if (lowerWord.length < 3 || /^\d+$/.test(lowerWord)) continue;
@@ -83,8 +74,22 @@ const SearchCat = ({ inputValue, searchTags, knownWords = new Set(), anchorRef, 
                         break;
                     }
                 }
+                if (newMessage) break;
             }
-            if (newMessage) break;
+        }
+
+        // Only if no typos were found, scan for long tags
+        if (!newMessage) {
+            for (const tag of searchTags) {
+                const words = tag.split(/\s+/).filter(w => w);
+                if (words.length >= 3) {
+                    newMessage = {
+                        type: 'long',
+                        text: `Từ khóa "${tag}" dài nên sẽ hơi khó tìm kiếm đó 🐱 Nên chia nó ra thành nhiều từ nhỏ nhé!`,
+                    };
+                    break;
+                }
+            }
         }
 
         if (newMessage) {
