@@ -771,7 +771,7 @@ th {
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  background: rgba(21, 23, 30, 0.75); /* Reduced opacity for better look */
+  background: rgba(21, 23, 30, 0.4); /* Slightly more transparent for maximum glass effect */
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--glass-border);
@@ -891,7 +891,7 @@ th {
 }
 
 .search-cat-container.entering {
-  animation: catBounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: catBounceIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 .search-cat-container.leaving {
@@ -933,7 +933,7 @@ th {
   max-width: 280px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
   position: relative;
-  animation: bubblePop 0.4s ease 0.3s both;
+  animation: bubblePop 0.3s ease forwards; /* Removed 0.3s delay */
   pointer-events: auto;
 }
 
