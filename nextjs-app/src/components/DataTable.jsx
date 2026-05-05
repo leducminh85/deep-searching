@@ -389,8 +389,7 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
     const removeTag = (tagToRemove) => {
         const newTags = searchTags.filter(tag => tag !== tagToRemove);
         setSearchTags(newTags);
-        // Do NOT update appliedTags here to satisfy "only search on Enter/Icon"
-        setPage(1);
+        // Do NOT update appliedTags or page here to satisfy "only search on Enter/Icon"
     };
 
     // ---- HYBRID INSTANT AUTOCOMPLETE ----
