@@ -83,9 +83,12 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
     const suggestionsDebounceRef = useRef(null);
+    const suggestionsAbortRef = useRef(null);
     const searchWrapperRef = useRef(null);
     const searchInputRef = useRef(null);
     const seenSuggestionsRef = useRef(new Set());
+    const localIndexRef = useRef(null); // Pre-loaded keyword+channel index for instant local filtering
+    const suggestionsCacheRef = useRef(new Map()); // Client-side cache for API results
     const [visibleRows, setVisibleRows] = useState(50);
     const [showScrollTop, setShowScrollTop] = useState(false);
 
@@ -193,6 +196,25 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
     // Lấy danh sách kênh khi component mount
     useEffect(() => {
         fetchChannels();
+    }, []);
+
+    // Pre-load suggestion index on mount for instant local filtering
+    useEffect(() => {
+        const preloadIndex = async () => {
+            try {
+                const res = await fetch(`${API_BASE}/api/suggestions/preload`);
+                if (res.ok) {
+                    const data = await res.json();
+                    localIndexRef.current = data;
+                    // Also populate seenSuggestions for spell-check
+                    data.keywords?.forEach(k => seenSuggestionsRef.current.add(k.text.toLowerCase()));
+                    data.channels?.forEach(c => seenSuggestionsRef.current.add(c.toLowerCase()));
+                }
+            } catch (err) {
+                console.error('Failed to preload suggestion index:', err);
+            }
+        };
+        preloadIndex();
     }, []);
 
     // Handle Escape key to close lightbox
@@ -366,38 +388,111 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         setPage(1);
     };
 
-    // Autocomplete: fetch suggestions with debounce
-    const fetchSuggestions = useCallback(async (value) => {
-        if (!value || value.trim().length < 2) {
-            setSuggestions([]);
-            setShowSuggestions(false);
+    // ---- HYBRID INSTANT AUTOCOMPLETE ----
+
+    // Local filter: instant results from pre-loaded index (0ms)
+    const filterLocal = useCallback((value) => {
+        const index = localIndexRef.current;
+        if (!index || !value) return [];
+
+        const q = value.trim().toLowerCase();
+        if (q.length < 1) return [];
+
+        const results = [];
+
+        // Match channels (contains)
+        index.channels?.forEach(name => {
+            if (name.toLowerCase().includes(q) && results.length < 3) {
+                results.push({ text: name, type: 'channel' });
+            }
+        });
+
+        // Match keywords (prefix)
+        index.keywords?.forEach(k => {
+            if (k.text.startsWith(q) && results.length < 11) {
+                results.push({ text: k.text, type: 'keyword', count: k.count });
+            }
+        });
+
+        return results;
+    }, []);
+
+    // API fetch with client-side caching + abort control
+    const fetchSuggestionsFromAPI = useCallback(async (value) => {
+        const trimmed = value.trim();
+        if (!trimmed || trimmed.length < 1) return;
+
+        // Check client-side cache first
+        const cacheKey = trimmed.toLowerCase();
+        if (suggestionsCacheRef.current.has(cacheKey)) {
+            const cached = suggestionsCacheRef.current.get(cacheKey);
+            setSuggestions(cached);
+            setShowSuggestions(cached.length > 0);
+            setActiveSuggestionIndex(-1);
             return;
         }
+
+        // Cancel previous in-flight request
+        if (suggestionsAbortRef.current) {
+            suggestionsAbortRef.current.abort();
+        }
+        const controller = new AbortController();
+        suggestionsAbortRef.current = controller;
+
         try {
-            const res = await fetch(`${API_BASE}/api/suggestions?q=${encodeURIComponent(value.trim())}`);
+            const res = await fetch(
+                `${API_BASE}/api/suggestions?q=${encodeURIComponent(trimmed)}`,
+                { signal: controller.signal }
+            );
             if (res.ok) {
                 const data = await res.json();
                 const items = data.suggestions || [];
-                setSuggestions(items);
-                // Accumulate all seen suggestion words for spell-check
+                // Cache this result
+                suggestionsCacheRef.current.set(cacheKey, items);
+                // Keep cache manageable (max 100 entries)
+                if (suggestionsCacheRef.current.size > 100) {
+                    const firstKey = suggestionsCacheRef.current.keys().next().value;
+                    suggestionsCacheRef.current.delete(firstKey);
+                }
+                // Accumulate for spell-check
                 items.forEach(s => seenSuggestionsRef.current.add(s.text.toLowerCase()));
+                // Only update if this is still the latest input
+                setSuggestions(items);
                 setShowSuggestions(items.length > 0);
                 setActiveSuggestionIndex(-1);
             }
         } catch (err) {
-            console.error('Suggestions fetch error:', err);
+            if (err.name !== 'AbortError') {
+                console.error('Suggestions fetch error:', err);
+            }
         }
     }, []);
 
     const handleInputChange = (value) => {
         setInputValue(value);
-        // Debounce suggestions fetch
+
+        if (!value.trim()) {
+            setSuggestions([]);
+            setShowSuggestions(false);
+            if (suggestionsDebounceRef.current) clearTimeout(suggestionsDebounceRef.current);
+            return;
+        }
+
+        // Step 1: INSTANT local filter (0ms) — show results immediately
+        const localResults = filterLocal(value);
+        if (localResults.length > 0) {
+            setSuggestions(localResults);
+            setShowSuggestions(true);
+            setActiveSuggestionIndex(-1);
+        }
+
+        // Step 2: Debounced API fetch (200ms) — refine with fresh DB data
         if (suggestionsDebounceRef.current) {
             clearTimeout(suggestionsDebounceRef.current);
         }
         suggestionsDebounceRef.current = setTimeout(() => {
-            fetchSuggestions(value);
-        }, 50);
+            fetchSuggestionsFromAPI(value);
+        }, 200);
     };
 
     const handleSuggestionSelect = (suggestion) => {

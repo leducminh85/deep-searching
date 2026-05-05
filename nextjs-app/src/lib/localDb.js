@@ -189,25 +189,24 @@ export async function getSuggestions(query) {
         const prefixPattern = `${lowerQuery}%`;
         const likePattern = `%${lowerQuery}%`;
 
-        // Extract individual keywords from the FTS tsvector using ts_stat
-        // This returns distinct lexemes (words) that appear in video data
-        const keywordResult = await db.query(
-            `SELECT word, nentry 
-             FROM ts_stat('SELECT fts_no_caption FROM videos') 
-             WHERE word LIKE $1 AND length(word) >= 2
-             ORDER BY nentry DESC 
-             LIMIT 8`,
-            [prefixPattern]
-        );
-
-        // Also get matching channel names
-        const channelResult = await db.query(
-            `SELECT DISTINCT channel_name FROM videos 
-             WHERE channel_name ILIKE $1 AND channel_name IS NOT NULL AND channel_name != ''
-             ORDER BY channel_name 
-             LIMIT 3`,
-            [likePattern]
-        );
+        // Run both queries in parallel for speed
+        const [keywordResult, channelResult] = await Promise.all([
+            db.query(
+                `SELECT word, nentry 
+                 FROM ts_stat('SELECT fts_no_caption FROM videos') 
+                 WHERE word LIKE $1 AND length(word) >= 2
+                 ORDER BY nentry DESC 
+                 LIMIT 8`,
+                [prefixPattern]
+            ),
+            db.query(
+                `SELECT DISTINCT channel_name FROM videos 
+                 WHERE channel_name ILIKE $1 AND channel_name IS NOT NULL AND channel_name != ''
+                 ORDER BY channel_name 
+                 LIMIT 3`,
+                [likePattern]
+            )
+        ]);
 
         const suggestions = [];
 
@@ -234,3 +233,49 @@ export async function getSuggestions(query) {
         return [];
     }
 }
+
+/**
+ * Preload the entire suggestion index for client-side filtering.
+ * Returns all FTS lexemes (with counts) and all channel names.
+ * Cached in server memory for 5 minutes to avoid repeated heavy queries.
+ */
+let _cachedIndex = null;
+let _cacheTimestamp = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export async function preloadSuggestionIndex() {
+    const now = Date.now();
+    if (_cachedIndex && (now - _cacheTimestamp) < CACHE_TTL) {
+        return _cachedIndex;
+    }
+
+    const db = getPool();
+    try {
+        const [keywordResult, channelResult] = await Promise.all([
+            db.query(
+                `SELECT word, nentry 
+                 FROM ts_stat('SELECT fts_no_caption FROM videos') 
+                 WHERE length(word) >= 2
+                 ORDER BY nentry DESC 
+                 LIMIT 2000`
+            ),
+            db.query(
+                `SELECT DISTINCT channel_name FROM videos 
+                 WHERE channel_name IS NOT NULL AND channel_name != ''
+                 ORDER BY channel_name`
+            )
+        ]);
+
+        _cachedIndex = {
+            keywords: keywordResult.rows.map(r => ({ text: r.word, count: r.nentry })),
+            channels: channelResult.rows.map(r => r.channel_name),
+        };
+        _cacheTimestamp = now;
+
+        return _cachedIndex;
+    } catch (e) {
+        console.error(`❌ Local DB Error (preload): ${e.message}`);
+        return { keywords: [], channels: [] };
+    }
+}
+

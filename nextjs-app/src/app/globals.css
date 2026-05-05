@@ -90,7 +90,7 @@ h1 {
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   transition: transform 0.3s ease;
 }
@@ -102,6 +102,7 @@ h1 {
   gap: 1.5rem;
   align-items: center;
   background: var(--toolbar-bg);
+  border-radius: 16px 16px 0 0;
 }
 
 input.search-input {
@@ -771,7 +772,7 @@ th {
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  background: rgba(21, 23, 30, 0.4); /* Slightly more transparent for maximum glass effect */
+  background: rgba(21, 23, 30, 0.9); /* Reduced transparency for better readability */
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--glass-border);

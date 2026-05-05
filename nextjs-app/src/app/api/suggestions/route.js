@@ -15,13 +15,17 @@ export async function GET(request) {
         const { searchParams } = new URL(request.url);
         const query = searchParams.get('q') || '';
 
-        if (!query.trim() || query.trim().length < 2) {
+        if (!query.trim() || query.trim().length < 1) {
             return NextResponse.json({ suggestions: [] });
         }
 
         const suggestions = await getSuggestions(query.trim());
 
-        return NextResponse.json({ suggestions });
+        return NextResponse.json({ suggestions }, {
+            headers: {
+                'Cache-Control': 'private, max-age=5',
+            }
+        });
     } catch (e) {
         console.error('Suggestions error:', e.message);
         return NextResponse.json({ suggestions: [] });
