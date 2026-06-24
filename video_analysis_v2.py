@@ -10,15 +10,18 @@ import re
 import ollama
 import os
 import json
+import sys
 
 # --- CẤU HÌNH CƠ BẢN ---
 FILE_PATH = "data.xlsx"   
 SHEET_NAME = "NEW_CACHE_DATA_HIDDEN_"
-MAX_WORKERS = 4      # QUAN TRỌNG: Đã đổi thành 1 luồng để tránh tràn VRAM khi AI đọc đoạn text dài
+MAX_WORKERS = 4      # Run Ollama sequentially to avoid short/unstable local-model outputs
 SAVE_EVERY = 2        
 MAX_TEST_VIDEOS = 10000  # Số lượng video muốn chạy thử. Đổi thành số lớn hơn nếu muốn chạy thật.
 COOKIES_FILE = "cookies.txt"  # File cookies từ trình duyệt để YouTube không chặn
 COOKIES_FILE_2 = "cookies2.txt" # File cookies dự phòng
+MIN_SUMMARY_WORDS = 25
+MAX_AI_RETRIES = 3
 
 # Biến toàn cục
 stop_flag = False
@@ -27,6 +30,39 @@ save_lock = threading.Lock()
 success_count = 0
 wb = None
 ws = None
+
+def configure_console_encoding():
+    """Avoid UnicodeEncodeError when Windows console is not using UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+configure_console_encoding()
+
+def is_error_marker(text):
+    marker = str(text).strip().upper()
+    return (
+        marker in {"ERROR", "ERROR_AI", "ABORTED", "IP_BLOCKED"}
+        or marker.startswith("ERROR_")
+        or marker.startswith("ERROR:")
+    )
+
+def sanitize_caption_for_ai(caption_text):
+    """Redact trigger words only in the prompt copy; the Excel caption remains unchanged."""
+    caption = str(caption_text or "")
+    replacements = [
+        (r"\[ __ \]", " "),
+        (r"\b(fuck|fucking|shit|bitch|asshole)\b", "profanity"),
+        (r"\b(dick|pussy|penis|vagina|sex)\b", "explicit term"),
+        (r"\b(rape|raped|raping)\b", "sexual assault allegation"),
+        (r"\b(kill|killed|killing|murder|murdered)\b", "harm"),
+    ]
+    for pattern, replacement in replacements:
+        caption = re.sub(pattern, replacement, caption, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", caption).strip()
 
 def clean_for_excel(text):
     """Tẩy rửa triệt để các ký tự rác làm hỏng cấu trúc XML của Excel"""
@@ -41,6 +77,43 @@ def clean_for_excel(text):
     
     # 3. Đảm bảo an toàn tuyệt đối độ dài (Excel tối đa khoảng 32,767 ký tự/ô)
     return text[:32000]
+
+def is_bad_summary(summary):
+    """Nhận diện output AI bị cụt/từ chối để không coi là kết quả hợp lệ."""
+    if summary is None:
+        return True
+
+    text = str(summary).strip()
+    if not text:
+        return True
+
+    if text == "#":
+        return False
+
+    if is_error_marker(text):
+        return True
+
+    upper_text = text.upper()
+
+    refusal_markers = [
+        "I can't fulfill this request",
+        "I can’t fulfill this request",
+        "I cannot fulfill this request",
+        "I can't assist",
+        "I can’t assist",
+        "I cannot assist",
+        "I can't provide",
+        "I can’t provide",
+        "I cannot provide",
+    ]
+    if any(marker.lower() in text.lower() for marker in refusal_markers):
+        return True
+
+    word_count = len(text.split())
+    has_main_story = "MAIN STORY" in upper_text
+    has_conflict_section = "TYPE OF CONFLICT" in upper_text or "CONFLICT TYPE" in upper_text
+    has_expected_format = has_main_story and has_conflict_section
+    return word_count < MIN_SUMMARY_WORDS or not has_expected_format
 
 def fetch_caption(video_url, row_idx):
     """Lấy caption dùng yt-dlp + Cookies, xử lý triệt để lỗi"""
@@ -143,10 +216,14 @@ def fetch_caption(video_url, row_idx):
 def generate_summary(caption_text, row_idx):
     """Sử dụng Ollama (Local AI) để đọc caption và trích xuất cấu trúc câu chuyện"""
     if not caption_text or caption_text == "#" or len(str(caption_text).strip()) < 50:
-        return "#"
+        return ""
         
+    ai_caption = sanitize_caption_for_ai(caption_text)
+
     prompt = f"""
     You are a video data analyst. Read the YouTube subtitles below, summarize and analyze the content for in-depth research.
+    This is a passive transcript-indexing task for a searchable video database. Some transcripts may include sensitive or crime-related material.
+    Do not provide instructions, advice, encouragement, or operational details for wrongdoing. Keep the wording neutral, high-level, and non-graphic.
 
     Please answer in the following format (write concisely and directly in English):
 
@@ -170,26 +247,37 @@ def generate_summary(caption_text, row_idx):
     - NO SPECULATION: Only analyze based on what is actually present in the text. If you are not 100% sure about a specific fact, DO NOT include it in the analysis.
 
     Caption:
-    {caption_text[:30000]}
+    {ai_caption[:30000]}
     """
-    try:
-        # CẬP NHẬT: Đổi sang model llama3.2:3b siêu tốc và mở rộng Context Window
-        response = ollama.chat(
-            model='llama3.2:3b', 
-            messages=[
-                {
-                    'role': 'user',
-                    'content': prompt,
-                },
-            ],
-            options={
-                'num_ctx': 8192  # QUAN TRỌNG: Mở rộng bộ nhớ để AI đọc hết được 30,000 ký tự đầu vào
-            }
-        )
-        return response['message']['content'].strip()
-    except Exception as e:
-        print(f"[Dòng {row_idx}] ❌ Lỗi Local AI: Có thể Ollama chưa chạy, chưa tải model llama3.2:3b hoặc model quá nặng. Chi tiết: {e}")
-        return "ERROR_AI"
+    for attempt in range(1, MAX_AI_RETRIES + 1):
+        try:
+            # CẬP NHẬT: Đổi sang model llama3.2:3b siêu tốc và mở rộng Context Window
+            response = ollama.chat(
+                model='llama3.2:3b',
+                messages=[
+                    {
+                        'role': 'user',
+                        'content': prompt,
+                    },
+                ],
+                stream=False,
+                options={
+                    'num_ctx': 16384,  # Fit long captions plus prompt without truncating context
+                    'num_predict': 700,
+                    'temperature': 0.2,
+                }
+            )
+            result = response['message']['content'].strip()
+            if not is_bad_summary(result):
+                return result
+
+            print(f"[Dòng {row_idx}] ⚠️ AI trả lời quá ngắn/sai format lần {attempt}: {result[:80]!r}")
+            time.sleep(2)
+        except Exception as e:
+            print(f"[Dòng {row_idx}] ❌ Lỗi Local AI lần {attempt}: Có thể Ollama chưa chạy, chưa tải model llama3.2:3b hoặc model quá nặng. Chi tiết: {e}")
+            time.sleep(2)
+
+    return ""
 
 def process_row(row_idx, url, existing_caption, existing_summary):
     """Xử lý từng dòng: Lấy caption (nếu chưa có) -> Tạo summary (nếu chưa có)"""
@@ -221,7 +309,7 @@ def process_row(row_idx, url, existing_caption, existing_summary):
 
     # 2. Xử lý Summary (Chỉ chạy khi đã có caption và chưa có summary hợp lệ)
     if final_caption and final_caption != "#" and final_caption != "ERROR":
-        if existing_summary is None or str(existing_summary).strip() == "" or "ERROR" in str(existing_summary):
+        if is_bad_summary(existing_summary):
             print(f"  [Dòng {row_idx}] 🤖 Llama 3.2 3B đang đọc và tóm tắt nội dung...")
             final_summary = generate_summary(final_caption, row_idx)
     else:
@@ -291,7 +379,7 @@ def main():
         
         # Chỉ lấy những dòng cần cập nhật Caption hoặc Summary
         needs_caption = caption is None or str(caption).strip() == "" or "ERROR" in str(caption)
-        needs_summary = (summary is None or str(summary).strip() == "" or "ERROR" in str(summary)) and caption != "#"
+        needs_summary = is_bad_summary(summary) and caption != "#"
         
         if is_valid_url and (needs_caption or needs_summary):
             tasks.append((row_idx, url, caption, summary))
