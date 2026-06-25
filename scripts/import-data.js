@@ -8,6 +8,7 @@ import pg from 'pg';
 import XLSX from 'xlsx';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { getVideoKey } from '../nextjs-app/src/lib/videoUrl.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,7 +64,7 @@ async function importData() {
     }
 
     // Chỉ giữ lại các cột có trong DB
-    const dbColumns = ['title', 'url', 'channel_name', 'views', 'date_published', 'thumbnail', 'caption', 'summary'];
+    const dbColumns = ['title', 'url', 'channel_name', 'views', 'date_published', 'thumbnail', 'caption', 'summary', 'video_key'];
     records = records.map(row => {
         const filtered = {};
         for (const col of dbColumns) {
@@ -119,6 +120,8 @@ async function importData() {
             }
         }
 
+        row.video_key = getVideoKey(row.url);
+
         return row;
     });
 
@@ -142,7 +145,7 @@ async function importData() {
             let paramIdx = 1;
 
             for (const row of batch) {
-                placeholders.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6}, $${paramIdx + 7})`);
+                placeholders.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6}, $${paramIdx + 7}, $${paramIdx + 8})`);
                 values.push(
                     row.title || '',
                     row.url,
@@ -151,13 +154,14 @@ async function importData() {
                     row.date_published || null,
                     row.thumbnail || '',
                     row.caption || '',
-                    row.summary || ''
+                    row.summary || '',
+                    row.video_key || null
                 );
-                paramIdx += 8;
+                paramIdx += 9;
             }
 
             const sql = `
-                INSERT INTO videos (title, url, channel_name, views, date_published, thumbnail, caption, summary)
+                INSERT INTO videos (title, url, channel_name, views, date_published, thumbnail, caption, summary, video_key)
                 VALUES ${placeholders.join(', ')}
                 ON CONFLICT (url) DO UPDATE SET
                     title = EXCLUDED.title,
@@ -166,7 +170,8 @@ async function importData() {
                     date_published = EXCLUDED.date_published,
                     thumbnail = EXCLUDED.thumbnail,
                     caption = EXCLUDED.caption,
-                    summary = EXCLUDED.summary
+                    summary = EXCLUDED.summary,
+                    video_key = EXCLUDED.video_key
             `;
 
             await pool.query(sql, values);

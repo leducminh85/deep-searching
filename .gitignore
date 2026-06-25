@@ -66,5 +66,7 @@ check_bug.py
 
 # Secrets and Proxies
 cookies.txt
+credentials.json
+*credentials*.json
 *.txt
 !requirements.txt

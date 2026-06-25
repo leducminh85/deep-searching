@@ -30,6 +30,8 @@ export async function GET(request) {
         const startDate = searchParams.get('start_date') || null;
         const endDate = searchParams.get('end_date') || null;
         const channels = searchParams.get('channels') || null;
+        const profileId = searchParams.get('profile_id') || null;
+        const hideUsed = searchParams.get('hide_used') === '1';
         
         const captionSearchParam = searchParams.get('caption_search');
         const captionSearch = captionSearchParam === '1';
@@ -37,7 +39,8 @@ export async function GET(request) {
         // Query video data từ LOCAL PostgreSQL
         const [data, total, errorInfo] = await getDataInternal(
             query, page, pageSize, sortBy, sortOrder, 
-            mode, minViews, maxViews, startDate, endDate, channels, captionSearch
+            mode, minViews, maxViews, startDate, endDate, channels, captionSearch,
+            profileId, user.email, hideUsed
         );
 
         if (errorInfo) {
@@ -76,7 +79,23 @@ async function logSearchHistory(supabase, query, mode, totalCount, email) {
     }
 }
 
-export async function getDataInternal(query, page, pageSize, sortBy, sortOrder, mode, minViews, maxViews, startDate, endDate, channels, captionSearch) {
+export async function getDataInternal(
+    query,
+    page,
+    pageSize,
+    sortBy,
+    sortOrder,
+    mode,
+    minViews,
+    maxViews,
+    startDate,
+    endDate,
+    channels,
+    captionSearch,
+    profileId = null,
+    userEmail = null,
+    hideUsed = false
+) {
     // Dùng LOCAL PostgreSQL cho video data
     return await queryVideos({
         query,
@@ -91,5 +110,8 @@ export async function getDataInternal(query, page, pageSize, sortBy, sortOrder, 
         endDate,
         channels,
         captionSearch,
+        profileId,
+        userEmail,
+        hideUsed,
     });
 }

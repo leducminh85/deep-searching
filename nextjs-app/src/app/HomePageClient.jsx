@@ -6,15 +6,19 @@ import { usePathname } from 'next/navigation';
 import { Sun, Moon, Highlighter, LogOut, Languages, Captions } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import DataTable from '../components/DataTable';
+import ProfileManager from '../components/ProfileManager';
 
 const Joyride = dynamic(() => import('react-joyride'), { ssr: false });
 
-export default function HomePageClient({ initialData }) {
+export default function HomePageClient({ initialData, initialProfile = null }) {
   const [theme, setTheme] = useState('dark');
   const [highlightEnabled, setHighlightEnabled] = useState(true);
   const [searchMode, setSearchMode] = useState('or');
   const [translateEnabled, setTranslateEnabled] = useState(false);
   const [captionSearchEnabled, setCaptionSearchEnabled] = useState(false);
+  const [hideUsedEnabled, setHideUsedEnabled] = useState(true);
+  const [activeProfile, setActiveProfile] = useState(initialProfile);
+  const [usageRefreshKey, setUsageRefreshKey] = useState(0);
   const [runTour, setRunTour] = useState(false);
 
   const tourSteps = [
@@ -75,6 +79,7 @@ export default function HomePageClient({ initialData }) {
     const savedSearchMode = localStorage.getItem('searchMode');
     const savedTranslate = localStorage.getItem('translateEnabled');
     const savedCaptionSearch = localStorage.getItem('captionSearchEnabled');
+    const savedHideUsed = localStorage.getItem('hideUsedEnabled');
 
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
@@ -83,6 +88,7 @@ export default function HomePageClient({ initialData }) {
     if (savedSearchMode) setSearchMode(savedSearchMode);
     if (savedTranslate !== null) setTranslateEnabled(savedTranslate === 'true');
     if (savedCaptionSearch !== null) setCaptionSearchEnabled(savedCaptionSearch === 'true');
+    if (savedHideUsed !== null) setHideUsedEnabled(savedHideUsed === 'true');
 
     const hasSeenTour = localStorage.getItem('hasSeenTour');
     if (!hasSeenTour) {
@@ -110,6 +116,10 @@ export default function HomePageClient({ initialData }) {
   useEffect(() => {
     localStorage.setItem('captionSearchEnabled', captionSearchEnabled);
   }, [captionSearchEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('hideUsedEnabled', hideUsedEnabled);
+  }, [hideUsedEnabled]);
 
   const toggleTheme = () => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
@@ -182,6 +192,11 @@ export default function HomePageClient({ initialData }) {
         </Link>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <ProfileManager
+            initialProfile={initialProfile}
+            onActiveProfileChange={setActiveProfile}
+            onUsageChanged={() => setUsageRefreshKey(prev => prev + 1)}
+          />
           <button
             className="theme-toggle tour-search-mode"
             onClick={toggleSearchMode}
@@ -250,6 +265,10 @@ export default function HomePageClient({ initialData }) {
           searchMode={searchMode}
           translateEnabled={translateEnabled}
           captionSearchEnabled={captionSearchEnabled}
+          hideUsedEnabled={hideUsedEnabled}
+          onToggleHideUsed={() => setHideUsedEnabled(prev => !prev)}
+          activeProfile={activeProfile}
+          usageRefreshKey={usageRefreshKey}
           initialData={initialData}
         />
       </main>
