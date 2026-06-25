@@ -44,11 +44,6 @@ export async function listProfiles(userEmail) {
         await setActiveProfile(userEmail, null);
     }
 
-    if (!activeProfileId && profiles.length > 0) {
-        activeProfileId = profiles[0].id;
-        await setActiveProfile(userEmail, activeProfileId);
-    }
-
     return {
         profiles,
         activeProfileId,
@@ -94,13 +89,7 @@ export async function createProfile(userEmail, { name, googleSheetUrl, tabScope 
         [userEmail, name.trim(), googleSheetUrl.trim(), normalizeTabScope(tabScope)]
     );
 
-    const profile = normalizeProfile(result.rows[0]);
-    const { activeProfileId } = await listProfiles(userEmail);
-    if (!activeProfileId || activeProfileId === profile.id) {
-        await setActiveProfile(userEmail, profile.id);
-    }
-
-    return profile;
+    return normalizeProfile(result.rows[0]);
 }
 
 export async function updateProfile(userEmail, profileId, { name, googleSheetUrl, tabScope }) {
@@ -151,10 +140,6 @@ export async function deleteProfile(userEmail, profileId) {
         );
 
         if (String(setting.rows[0]?.active_profile_id || '') === String(profileId)) {
-            const nextProfile = await client.query(
-                `SELECT id FROM usage_profiles WHERE user_email = $1 ORDER BY created_at DESC LIMIT 1`,
-                [userEmail]
-            );
             await client.query(
                 `
                     INSERT INTO usage_user_settings (user_email, active_profile_id, updated_at)
@@ -163,7 +148,7 @@ export async function deleteProfile(userEmail, profileId) {
                         active_profile_id = EXCLUDED.active_profile_id,
                         updated_at = NOW()
                 `,
-                [userEmail, nextProfile.rows[0]?.id || null]
+                [userEmail, null]
             );
         }
 

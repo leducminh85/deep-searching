@@ -63,11 +63,12 @@ const Highlight = ({ text, searches, enabled }) => {
 const DataTable = ({
     highlightEnabled,
     searchMode,
+    onToggleSearchMode,
     translateEnabled,
     captionSearchEnabled,
     hideUsedEnabled,
-    onToggleHideUsed,
     activeProfile,
+    profileControl,
     usageRefreshKey,
     initialData
 }) => {
@@ -220,7 +221,7 @@ const DataTable = ({
             activeProfile?.id || null,
             Boolean(hideUsedEnabled && activeProfile?.id)
         );
-    }, [appliedTags, page, sortConfig, appliedFilters, searchMode, captionSearchEnabled, usageFilterKey]);
+    }, [appliedTags, page, sortConfig, appliedFilters, captionSearchEnabled, usageFilterKey]);
 
     // Lấy danh sách kênh khi component mount
     useEffect(() => {
@@ -1113,6 +1114,14 @@ const DataTable = ({
                     </div>
                 )}
                 <div className="toolbar" style={{ gap: '1rem', flexWrap: 'wrap' }}>
+                    <button
+                        className={`search-mode-inline-button mode-${searchMode} tour-search-mode`}
+                        onClick={onToggleSearchMode}
+                        title={searchMode === 'or' ? 'Chế độ tìm kiếm: Một trong các từ khóa (OR)' : 'Chế độ tìm kiếm: Tất cả từ khóa (AND)'}
+                    >
+                        {searchMode.toUpperCase()}
+                    </button>
+
                     <div className="search-wrapper" ref={searchWrapperRef} style={{
                         flex: 1,
                         position: 'relative',
@@ -1260,14 +1269,7 @@ const DataTable = ({
                         <Filter size={20} />
                     </button>
 
-                    <button
-                        onClick={onToggleHideUsed}
-                        className={`usage-hide-toggle ${hideUsedEnabled ? 'active' : ''}`}
-                        disabled={!activeProfile}
-                        title={activeProfile ? 'Ẩn/hiện các video đã dùng trong profile hiện tại' : 'Tạo hoặc chọn profile để dùng tính năng này'}
-                    >
-                        {hideUsedEnabled ? 'Đang ẩn video đã dùng' : 'Hiện cả video đã dùng'}
-                    </button>
+                    {profileControl}
 
                     <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
                         {appliedTags.length > 0
