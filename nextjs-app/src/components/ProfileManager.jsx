@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Check, Edit3, ExternalLink, Eye, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Check, ChevronDown, Circle, Edit3, ExternalLink, Eye, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 
 export default function ProfileManager({ initialProfile = null, onActiveProfileChange, onUsageChanged }) {
     const [profiles, setProfiles] = useState(initialProfile ? [initialProfile] : []);
     const [activeProfile, setActiveProfile] = useState(initialProfile);
     const [isOpen, setIsOpen] = useState(false);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [isFormOpen, setIsFormOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [syncingId, setSyncingId] = useState(null);
@@ -17,6 +19,9 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
     const [usedVideos, setUsedVideos] = useState([]);
     const [usedTotal, setUsedTotal] = useState(0);
     const [usedLoading, setUsedLoading] = useState(false);
+    const [profileToDelete, setProfileToDelete] = useState(null);
+    const [deletingId, setDeletingId] = useState(null);
+    const menuRef = useRef(null);
 
     const notifyActiveProfile = (profile) => {
         setActiveProfile(profile);
@@ -46,9 +51,21 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
         fetchProfiles();
     }, []);
 
+    useEffect(() => {
+        const handlePointerDown = (event) => {
+            if (menuRef.current && !menuRef.current.contains(event.target)) {
+                setIsMenuOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handlePointerDown);
+        return () => document.removeEventListener('mousedown', handlePointerDown);
+    }, []);
+
     const resetForm = () => {
         setEditingId(null);
         setForm({ name: '', google_sheet_url: '', tab_scope: 'current' });
+        setIsFormOpen(false);
     };
 
     const startEdit = (profile) => {
@@ -58,6 +75,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
             google_sheet_url: profile.google_sheet_url || '',
             tab_scope: profile.tab_scope || 'current',
         });
+        setIsFormOpen(true);
     };
 
     const handleSubmit = async (event) => {
@@ -75,14 +93,8 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
             const payload = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(payload.error || 'Không thể lưu profile');
 
-            const savedProfile = payload.profile;
-            if (!editingId && savedProfile?.id) {
-                await fetch(`/api/profiles/${savedProfile.id}/select`, { method: 'POST' });
-            }
-
             resetForm();
             await fetchProfiles();
-            onUsageChanged?.();
         } catch (err) {
             setError(err.message);
         } finally {
@@ -98,6 +110,26 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
             if (!response.ok) throw new Error(payload.error || 'Không thể chọn profile');
 
             notifyActiveProfile(payload.profile || profile);
+            setIsMenuOpen(false);
+            onUsageChanged?.();
+        } catch (err) {
+            setError(err.message);
+        }
+    };
+
+    const clearActiveProfile = async () => {
+        setError('');
+        try {
+            const response = await fetch('/api/profiles/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ profile_id: null }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.error || 'Không thể bỏ chọn profile');
+
+            notifyActiveProfile(null);
+            setIsMenuOpen(false);
             onUsageChanged?.();
         } catch (err) {
             setError(err.message);
@@ -105,20 +137,27 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
     };
 
     const deleteProfile = async (profile) => {
-        if (!window.confirm(`Xoá profile "${profile.name}"? Dữ liệu video đã dùng cache của profile này cũng sẽ bị xoá.`)) {
-            return;
-        }
+        setProfileToDelete(profile);
+    };
 
+    const confirmDeleteProfile = async () => {
+        if (!profileToDelete) return;
+
+        const profile = profileToDelete;
+        setDeletingId(profile.id);
         setError('');
         try {
             const response = await fetch(`/api/profiles/${profile.id}`, { method: 'DELETE' });
             const payload = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(payload.error || 'Không thể xoá profile');
 
+            if (editingId === profile.id) resetForm();
+            setProfileToDelete(null);
             await fetchProfiles();
-            onUsageChanged?.();
         } catch (err) {
             setError(err.message);
+        } finally {
+            setDeletingId(null);
         }
     };
 
@@ -174,14 +213,54 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
 
     return (
         <>
-            <button
-                className="profile-chip"
-                onClick={() => setIsOpen(true)}
-                title="Quản lý Usage Profile"
-            >
-                <span className="profile-chip-label">Profile:</span>
-                <span className="profile-chip-name">{activeProfile?.name || 'Chưa chọn'}</span>
-            </button>
+            <div className="profile-menu-wrap" ref={menuRef}>
+                <button
+                    className="profile-chip"
+                    onClick={() => setIsMenuOpen((prev) => !prev)}
+                    title="Chọn Usage Profile"
+                >
+                    <span className="profile-chip-label">Profile:</span>
+                    <span className="profile-chip-name">{activeProfile?.name || 'None'}</span>
+                    <ChevronDown size={15} />
+                </button>
+
+                {isMenuOpen && (
+                    <div className="profile-dropdown">
+                        <button
+                            className={`profile-dropdown-item profile-dropdown-none ${!activeProfile ? 'active' : ''}`}
+                            onClick={clearActiveProfile}
+                            title="Không dùng profile"
+                            aria-label="Không dùng profile"
+                        >
+                            <Circle size={15} className="profile-none-icon" />
+                        </button>
+
+                        {profiles.map((profile) => (
+                            <button
+                                key={profile.id}
+                                className={`profile-dropdown-item ${activeProfile?.id === profile.id ? 'active' : ''}`}
+                                onClick={() => selectProfile(profile)}
+                            >
+                                {activeProfile?.id === profile.id && <Check size={14} />}
+                                <span>{profile.name}</span>
+                            </button>
+                        ))}
+
+                        <div className="profile-dropdown-separator" />
+
+                        <button
+                            className="profile-dropdown-item manage"
+                            onClick={() => {
+                                setIsMenuOpen(false);
+                                setIsOpen(true);
+                            }}
+                        >
+                            <Edit3 size={14} />
+                            <span>Quản lý profile</span>
+                        </button>
+                    </div>
+                )}
+            </div>
 
             {isOpen && (
                 <div className="modal-overlay" onClick={() => setIsOpen(false)}>
@@ -198,6 +277,16 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
 
                         {error && <div className="profile-error">{error}</div>}
 
+                        {!isFormOpen ? (
+                            <button
+                                type="button"
+                                className="profile-create-toggle"
+                                onClick={() => setIsFormOpen(true)}
+                            >
+                                <Plus size={18} />
+                                Tạo profile
+                            </button>
+                        ) : (
                         <form className="profile-form" onSubmit={handleSubmit}>
                             <div className="form-group">
                                 <label>Tên profile</label>
@@ -250,25 +339,24 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
                                 </button>
                             </div>
                         </form>
+                        )}
 
                         <div className="profile-list">
                             {loading && <div className="profile-empty">Đang tải profile...</div>}
                             {!loading && profiles.length === 0 && (
                                 <div className="profile-empty">
                                     <Plus size={20} />
-                                    Chưa có profile nào. Tạo profile đầu tiên bằng form phía trên.
+                                    Chưa có profile nào. Bấm “Tạo profile” để thêm profile đầu tiên.
                                 </div>
                             )}
 
                             {profiles.map((profile) => {
-                                const isActive = activeProfile?.id === profile.id;
                                 const isSyncing = syncingId === profile.id;
 
                                 return (
-                                    <div key={profile.id} className={`profile-card ${isActive ? 'active' : ''}`}>
+                                    <div key={profile.id} className="profile-card">
                                         <div className="profile-card-main">
                                             <div className="profile-card-title">
-                                                {isActive && <Check size={16} />}
                                                 <span>{profile.name}</span>
                                             </div>
                                             <a href={profile.google_sheet_url} target="_blank" rel="noopener noreferrer" className="profile-sheet-link">
@@ -283,9 +371,6 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
                                             {profile.sync_error && <div className="profile-warning">{profile.sync_error}</div>}
                                         </div>
                                         <div className="profile-card-actions">
-                                            <button onClick={() => selectProfile(profile)} disabled={isActive} title="Chọn profile">
-                                                <Check size={16} />
-                                            </button>
                                             <button onClick={() => syncProfile(profile)} disabled={isSyncing} title="Sync Google Sheet/Docs">
                                                 <RefreshCw size={16} className={isSyncing ? 'spin-icon' : ''} />
                                             </button>
@@ -302,6 +387,40 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
                                     </div>
                                 );
                             })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {profileToDelete && (
+                <div className="modal-overlay" onClick={() => setProfileToDelete(null)}>
+                    <div className="modal-container profile-delete-modal" onClick={(event) => event.stopPropagation()}>
+                        <div className="profile-delete-icon">
+                            <Trash2 size={24} />
+                        </div>
+                        <div className="modal-header profile-delete-header">
+                            <h2>Xoá profile?</h2>
+                            <p>
+                                Profile <strong>{profileToDelete.name}</strong> sẽ bị xoá cùng cache video đã dùng của profile này.
+                            </p>
+                        </div>
+                        <div className="modal-footer">
+                            <button
+                                type="button"
+                                className="modal-btn-cancel"
+                                onClick={() => setProfileToDelete(null)}
+                                disabled={deletingId === profileToDelete.id}
+                            >
+                                Huỷ
+                            </button>
+                            <button
+                                type="button"
+                                className="modal-btn-confirm modal-btn-danger"
+                                onClick={confirmDeleteProfile}
+                                disabled={deletingId === profileToDelete.id}
+                            >
+                                {deletingId === profileToDelete.id ? 'Đang xoá...' : 'Xoá profile'}
+                            </button>
                         </div>
                     </div>
                 </div>

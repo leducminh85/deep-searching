@@ -16,7 +16,6 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
   const [searchMode, setSearchMode] = useState('or');
   const [translateEnabled, setTranslateEnabled] = useState(false);
   const [captionSearchEnabled, setCaptionSearchEnabled] = useState(false);
-  const [hideUsedEnabled, setHideUsedEnabled] = useState(true);
   const [activeProfile, setActiveProfile] = useState(initialProfile);
   const [usageRefreshKey, setUsageRefreshKey] = useState(0);
   const [runTour, setRunTour] = useState(false);
@@ -79,7 +78,6 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
     const savedSearchMode = localStorage.getItem('searchMode');
     const savedTranslate = localStorage.getItem('translateEnabled');
     const savedCaptionSearch = localStorage.getItem('captionSearchEnabled');
-    const savedHideUsed = localStorage.getItem('hideUsedEnabled');
 
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
@@ -88,7 +86,6 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
     if (savedSearchMode) setSearchMode(savedSearchMode);
     if (savedTranslate !== null) setTranslateEnabled(savedTranslate === 'true');
     if (savedCaptionSearch !== null) setCaptionSearchEnabled(savedCaptionSearch === 'true');
-    if (savedHideUsed !== null) setHideUsedEnabled(savedHideUsed === 'true');
 
     const hasSeenTour = localStorage.getItem('hasSeenTour');
     if (!hasSeenTour) {
@@ -116,10 +113,6 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
   useEffect(() => {
     localStorage.setItem('captionSearchEnabled', captionSearchEnabled);
   }, [captionSearchEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('hideUsedEnabled', hideUsedEnabled);
-  }, [hideUsedEnabled]);
 
   const toggleTheme = () => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
@@ -192,31 +185,6 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
         </Link>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <ProfileManager
-            initialProfile={initialProfile}
-            onActiveProfileChange={setActiveProfile}
-            onUsageChanged={() => setUsageRefreshKey(prev => prev + 1)}
-          />
-          <button
-            className="theme-toggle tour-search-mode"
-            onClick={toggleSearchMode}
-            title={searchMode === 'or' ? "Chế độ tìm kiếm: Một trong các từ khóa (OR)" : "Chế độ tìm kiếm: Tất cả từ khóa (AND)"}
-            style={{
-              fontSize: '0.75rem',
-              fontWeight: 'bold',
-              padding: '0 0.75rem',
-              minWidth: '60px',
-              height: '36px',
-              borderRadius: '8px',
-              border: '1px solid var(--glass-border)',
-              background: searchMode === 'and' ? 'var(--primary-color)' : 'transparent',
-              color: searchMode === 'and' ? 'white' : 'var(--text-color)',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            {searchMode.toUpperCase()}
-          </button>
           <button
             className="theme-toggle tour-highlight"
             onClick={() => setHighlightEnabled(!highlightEnabled)}
@@ -263,11 +231,18 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
         <DataTable
           highlightEnabled={highlightEnabled}
           searchMode={searchMode}
+          onToggleSearchMode={toggleSearchMode}
           translateEnabled={translateEnabled}
           captionSearchEnabled={captionSearchEnabled}
-          hideUsedEnabled={hideUsedEnabled}
-          onToggleHideUsed={() => setHideUsedEnabled(prev => !prev)}
+          hideUsedEnabled={true}
           activeProfile={activeProfile}
+          profileControl={(
+            <ProfileManager
+              initialProfile={initialProfile}
+              onActiveProfileChange={setActiveProfile}
+              onUsageChanged={() => setUsageRefreshKey(prev => prev + 1)}
+            />
+          )}
           usageRefreshKey={usageRefreshKey}
           initialData={initialData}
         />
