@@ -9,6 +9,7 @@ import XLSX from 'xlsx';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { getVideoKey } from '../src/lib/videoUrl.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -74,7 +75,7 @@ async function importData() {
         return newRow;
     });
 
-    const dbColumns = ['title', 'url', 'channel_name', 'views', 'date_published', 'thumbnail', 'caption', 'summary'];
+    const dbColumns = ['title', 'url', 'channel_name', 'views', 'date_published', 'thumbnail', 'caption', 'summary', 'video_key'];
     
     // Đảm bảo bảng 'videos' tồn tại
     try {
@@ -89,9 +90,12 @@ async function importData() {
                 thumbnail TEXT,
                 caption TEXT,
                 summary TEXT,
+                video_key TEXT,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             )
         `);
+        await pool.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS video_key TEXT`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_videos_video_key ON videos(video_key)`);
         console.log('✅ Checked/Created "videos" table.');
     } catch (e) {
         console.error(`❌ Error creating table: ${e.message}`);
@@ -120,6 +124,7 @@ async function importData() {
             const v = String(row[field] || '').trim();
             row[field] = (['nan','#'].includes(v)) ? '' : v;
         }
+        row.video_key = getVideoKey(row.url);
         return row;
     });
 
@@ -136,17 +141,17 @@ async function importData() {
             let paramIdx = 1;
 
             for (const row of batch) {
-                placeholders.push(`($${paramIdx}, $${paramIdx+1}, $${paramIdx+2}, $${paramIdx+3}, $${paramIdx+4}, $${paramIdx+5}, $${paramIdx+6}, $${paramIdx+7})`);
+                placeholders.push(`($${paramIdx}, $${paramIdx+1}, $${paramIdx+2}, $${paramIdx+3}, $${paramIdx+4}, $${paramIdx+5}, $${paramIdx+6}, $${paramIdx+7}, $${paramIdx+8})`);
                 values.push(
                     row.title || '', row.url, row.channel_name || '', 
                     row.views || 0, row.date_published, row.thumbnail || '', 
-                    row.caption || '', row.summary || ''
+                    row.caption || '', row.summary || '', row.video_key || null
                 );
-                paramIdx += 8;
+                paramIdx += 9;
             }
 
             const sql = `
-                INSERT INTO videos (title, url, channel_name, views, date_published, thumbnail, caption, summary)
+                INSERT INTO videos (title, url, channel_name, views, date_published, thumbnail, caption, summary, video_key)
                 VALUES ${placeholders.join(', ')}
                 ON CONFLICT (url) DO UPDATE SET
                     title = EXCLUDED.title,
@@ -155,7 +160,8 @@ async function importData() {
                     date_published = EXCLUDED.date_published,
                     thumbnail = EXCLUDED.thumbnail,
                     caption = EXCLUDED.caption,
-                    summary = EXCLUDED.summary
+                    summary = EXCLUDED.summary,
+                    video_key = EXCLUDED.video_key
             `;
             await pool.query(sql, values);
             successCount += batch.length;

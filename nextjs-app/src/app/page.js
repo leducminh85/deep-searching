@@ -1,17 +1,15 @@
 import React from 'react';
 import { createClient } from '../utils/supabase/server';
+import { getActiveProfile } from '../lib/usageProfiles';
 import { getDataInternal } from './api/data/route';
 import HomePageClient from './HomePageClient';
 
 export default async function HomePage() {
   const supabase = await createClient();
-  
-  // Lấy người dùng hiện tại (nếu cần thiết cho bảo mật, route handler sẽ tự bắt lỗi nếu ko có)
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Load sẵn 50 rows mới nhất
   const page = 1;
-  const pageSize = 50; 
+  const pageSize = 50;
   const sortBy = 'date_published';
   const sortOrder = 'desc';
   const mode = 'or';
@@ -24,14 +22,29 @@ export default async function HomePage() {
   const captionSearch = true;
 
   let initialData = { data: [], total: 0, error: null };
+  let initialProfile = null;
 
-  if (user) {
+  if (user?.email) {
     try {
-      // getDataInternal giờ dùng LOCAL PostgreSQL
+      initialProfile = await getActiveProfile(user.email);
       const [data, total, errorInfo] = await getDataInternal(
-        query, page, pageSize, sortBy, sortOrder, mode,
-        minViews, maxViews, startDate, endDate, channels, captionSearch
+        query,
+        page,
+        pageSize,
+        sortBy,
+        sortOrder,
+        mode,
+        minViews,
+        maxViews,
+        startDate,
+        endDate,
+        channels,
+        captionSearch,
+        initialProfile?.id || null,
+        user.email,
+        Boolean(initialProfile)
       );
+
       if (errorInfo) {
         initialData.error = errorInfo;
       } else {
@@ -43,5 +56,5 @@ export default async function HomePage() {
     }
   }
 
-  return <HomePageClient initialData={initialData} />;
+  return <HomePageClient initialData={initialData} initialProfile={initialProfile} />;
 }

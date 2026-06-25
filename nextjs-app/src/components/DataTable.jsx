@@ -60,7 +60,17 @@ const Highlight = ({ text, searches, enabled }) => {
     );
 };
 
-const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSearchEnabled, initialData }) => {
+const DataTable = ({
+    highlightEnabled,
+    searchMode,
+    translateEnabled,
+    captionSearchEnabled,
+    hideUsedEnabled,
+    onToggleHideUsed,
+    activeProfile,
+    usageRefreshKey,
+    initialData
+}) => {
 
     const [data, setData] = useState(initialData?.data || []);
     const [loading, setLoading] = useState(!initialData?.data || initialData?.data.length === 0);
@@ -68,6 +78,8 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
     const [error, setError] = useState(initialData?.error || null);
 
     const isFirstRun = useRef(true);
+    const usageFilterKey = `${activeProfile?.id || ''}:${hideUsedEnabled ? 'hide' : 'show'}:${usageRefreshKey || 0}`;
+    const lastUsageFilterKeyRef = useRef(usageFilterKey);
 
     const [searchTags, setSearchTags] = useState([]);
     const [appliedTags, setAppliedTags] = useState([]);
@@ -178,8 +190,17 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
     // Gọi fetch khi trang, từ khóa hoặc sắp xếp thay đổi
     useEffect(() => {
         const query = appliedTags.join(',');
+        const usageFilterChanged = lastUsageFilterKeyRef.current !== usageFilterKey;
+        if (usageFilterChanged) {
+            lastUsageFilterKeyRef.current = usageFilterKey;
+            if (page !== 1) {
+                setPage(1);
+                return;
+            }
+        }
+
         // Skip client fetch on first render if initialData is provided and we are on default view
-        if (isFirstRun.current && initialData?.data?.length > 0) {
+        if (isFirstRun.current && initialData?.data?.length > 0 && !usageFilterChanged) {
             isFirstRun.current = false;
             if (page === 1 && !query && Object.keys(appliedFilters).length === 0) {
                 // Đã có từ SRR cho bản mặc định
@@ -189,8 +210,17 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         }
         isFirstRun.current = false;
 
-        fetchData(query, page, sortConfig, searchMode, appliedFilters, captionSearchEnabled);
-    }, [appliedTags, page, sortConfig, appliedFilters]);
+        fetchData(
+            query,
+            page,
+            sortConfig,
+            searchMode,
+            appliedFilters,
+            captionSearchEnabled,
+            activeProfile?.id || null,
+            Boolean(hideUsedEnabled && activeProfile?.id)
+        );
+    }, [appliedTags, page, sortConfig, appliedFilters, searchMode, captionSearchEnabled, usageFilterKey]);
 
     // Lấy danh sách kênh khi component mount
     useEffect(() => {
@@ -245,7 +275,16 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
         }
     };
 
-    const fetchData = async (query = '', pageNum = 1, sort = sortConfig, mode = 'or', filters = {}, captionSearch = false) => {
+    const fetchData = async (
+        query = '',
+        pageNum = 1,
+        sort = sortConfig,
+        mode = 'or',
+        filters = {},
+        captionSearch = false,
+        profileId = null,
+        hideUsed = false
+    ) => {
         // Chỉ abort request cũ khi tải trang 1 (tải lại từ đầu)
         if (pageNum === 1) {
             if (abortControllerRef.current) {
@@ -303,6 +342,9 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
             if (filters.endDate) filterParams += `&end_date=${filters.endDate}`;
             if (filters.selectedChannels && filters.selectedChannels.length > 0 && filters.selectedChannels.length < availableChannels.length) {
                 filterParams += `&channels=${encodeURIComponent(filters.selectedChannels.join(','))}`;
+            }
+            if (profileId) {
+                filterParams += `&profile_id=${encodeURIComponent(profileId)}&hide_used=${hideUsed ? '1' : '0'}`;
             }
 
             const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}&sort=${encodeURIComponent(sortParam)}&order=${orderParam}&mode=${mode}${filterParams}&caption_search=${captionSearch ? '1' : '0'}`;
@@ -845,6 +887,15 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
             return null;
         }
 
+        if (lowerHeader === 'title') {
+            return (
+                <div className="title-cell">
+                    <Highlight text={value} searches={appliedTags} enabled={highlightEnabled} />
+                    {row.Used && <span className="used-video-badge">Đã dùng</span>}
+                </div>
+            );
+        }
+
         if (typeof value === 'string' && value.startsWith('http')) {
             return (
                 <a href={value} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1207,6 +1258,15 @@ const DataTable = ({ highlightEnabled, searchMode, translateEnabled, captionSear
                         title="Bộ lọc nâng cao"
                     >
                         <Filter size={20} />
+                    </button>
+
+                    <button
+                        onClick={onToggleHideUsed}
+                        className={`usage-hide-toggle ${hideUsedEnabled ? 'active' : ''}`}
+                        disabled={!activeProfile}
+                        title={activeProfile ? 'Ẩn/hiện các video đã dùng trong profile hiện tại' : 'Tạo hoặc chọn profile để dùng tính năng này'}
+                    >
+                        {hideUsedEnabled ? 'Đang ẩn video đã dùng' : 'Hiện cả video đã dùng'}
                     </button>
 
                     <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
