@@ -2,8 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Sun, Moon, Highlighter, LogOut, Languages, Captions } from 'lucide-react';
+import { Sun, Moon, Highlighter, LogOut, Languages, Captions, CircleHelp } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import DataTable from '../components/DataTable';
 import ProfileManager from '../components/ProfileManager';
@@ -23,53 +22,50 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
   const tourSteps = [
     {
       target: '.tour-search-mode',
-      title: 'Bước 1/8: Chế độ Tìm kiếm',
-      content: 'Chuyển đổi chế độ tìm kiếm: Một trong (OR) hoặc Tất cả (AND).',
+      title: 'Bước 1/9: Chế độ tìm kiếm',
+      content: 'Chọn OR để tìm video khớp một trong các từ khoá, hoặc AND để chỉ lấy video khớp tất cả từ khoá. Đổi nút này không tự fetch lại dữ liệu.',
       disableBeacon: true,
-      disableScrolling: true,
-    },
-    {
-      target: '.tour-highlight',
-      title: 'Bước 2/8: Nổi bật Từ khóa',
-      content: 'Bật/tắt tính năng làm nổi bật từ khóa trong kết quả',
-      disableScrolling: true,
-    },
-    {
-      target: '.tour-translate',
-      title: 'Bước 3/8: Dịch Phân tích',
-      content: 'Bật dịch Cốt truyện. Hãy bật lên và trỏ chuột vào cột phân tích của video.',
-      disableScrolling: true,
-    },
-    {
-      target: '.tour-caption',
-      title: 'Bước 4/8: Tìm trong Phụ đề',
-      content: 'Bật để tìm kiếm mở rộng bao gồm nội dung phụ đề (caption).',
-      disableScrolling: true,
-    },
-    {
-      target: '.tour-theme',
-      title: 'Bước 5/8: Giao diện Tùy chỉnh',
-      content: 'Đổi màu nền sáng/tối.',
-      disableScrolling: true,
     },
     {
       target: '.search-input',
-      title: 'Bước 6/8: Nhập Tìm kiếm',
-      content: 'Nhập từ khóa và nhấn Enter (hoặc phẩy) để gộp nhiều từ khóa tìm kiếm.',
-      disableScrolling: true,
+      title: 'Bước 2/9: Nhập từ khoá',
+      content: 'Nhập từ khoá rồi nhấn Enter hoặc dấu phẩy để tạo tag. Bấm nút tìm kiếm để áp dụng danh sách tag hiện tại.',
     },
     {
       target: '.tour-filter',
-      title: 'Bước 7/8: Bộ lọc Nâng cao',
-      content: 'Lọc kết quả nâng cao.',
-      disableScrolling: true,
+      title: 'Bước 3/9: Bộ lọc nâng cao',
+      content: 'Mở bộ lọc để giới hạn kết quả theo lượt xem, ngày đăng hoặc kênh.',
+    },
+    {
+      target: '.tour-profile',
+      title: 'Bước 4/9: Usage Profile',
+      content: 'Chọn profile để tự ẩn các video đã dùng. Dùng icon tròn rỗng màu đỏ để chuyển về trạng thái không dùng profile, hoặc vào “Quản lý profile” để tạo, sửa, sync và xoá profile.',
+    },
+    {
+      target: '.tour-highlight',
+      title: 'Bước 5/9: Highlight từ khoá',
+      content: 'Bật/tắt highlight để làm nổi bật các từ khoá đang tìm trong tiêu đề và nội dung kết quả.',
+    },
+    {
+      target: '.tour-translate',
+      title: 'Bước 6/9: Dịch phân tích',
+      content: 'Bật dịch rồi rê chuột vào phần phân tích/cốt truyện của video để xem bản dịch tiếng Việt.',
+    },
+    {
+      target: '.tour-caption',
+      title: 'Bước 7/9: Tìm trong phụ đề',
+      content: 'Bật chế độ này để mở rộng tìm kiếm sang nội dung phụ đề/caption nếu video có dữ liệu caption.',
+    },
+    {
+      target: '.tour-theme',
+      title: 'Bước 8/9: Giao diện',
+      content: 'Đổi nhanh giữa giao diện sáng và tối.',
     },
     {
       target: '.tour-add-channel',
-      title: 'Bước 8/8: Thêm Kênh mới',
-      content: 'Gửi yêu cầu thêm kênh YouTube mới vào hệ thống.',
-      disableScrolling: true,
-    }
+      title: 'Bước 9/9: Thêm kênh mới',
+      content: 'Gửi yêu cầu thêm kênh YouTube mới vào hệ thống để mở rộng nguồn tìm kiếm.',
+    },
   ];
 
   useEffect(() => {
@@ -122,6 +118,11 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
     setSearchMode(prev => (prev === 'or' ? 'and' : 'or'));
   };
 
+  const startTour = () => {
+    setRunTour(false);
+    window.setTimeout(() => setRunTour(true), 0);
+  };
+
   const handleLogout = async () => {
     try {
       const res = await fetch('/api/auth/logout', { method: 'POST' });
@@ -148,12 +149,15 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
         steps={tourSteps}
         run={runTour}
         continuous={true}
-        showSkipButton={false}
-        showProgress={false}
-        hideCloseButton={true}
-        disableOverlayClose={true}
-        disableCloseOnEsc={true}
+        showSkipButton={true}
+        showProgress={true}
+        hideCloseButton={false}
+        disableOverlayClose={false}
+        disableCloseOnEsc={false}
+        disableScrolling={true}
         disableScrollParentFix={true}
+        scrollToFirstStep={false}
+        spotlightPadding={8}
         callback={handleJoyrideCallback}
         styles={{
           options: {
@@ -169,6 +173,9 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
           },
           buttonBack: {
             marginRight: 10
+          },
+          buttonSkip: {
+            color: '#94a3b8',
           }
         }}
         locale={{
@@ -176,6 +183,7 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
           close: 'Đóng',
           last: 'Hoàn thành',
           next: 'Tiếp theo',
+          skip: 'Bỏ qua',
         }}
       />
       <header className="header">
@@ -220,6 +228,9 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
           </button>
           <button className="theme-toggle tour-theme" onClick={toggleTheme} title="Đổi giao diện">
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+          </button>
+          <button className="theme-toggle" onClick={startTour} title="Xem hướng dẫn">
+            <CircleHelp size={20} />
           </button>
           <button className="theme-toggle" onClick={handleLogout} title="Đăng xuất" style={{ color: 'var(--accent-color)', borderColor: 'rgba(244, 63, 94, 0.2)' }}>
             <LogOut size={20} />

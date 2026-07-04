@@ -215,12 +215,12 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
         <>
             <div className="profile-menu-wrap" ref={menuRef}>
                 <button
-                    className="profile-chip"
+                    className="profile-chip tour-profile"
                     onClick={() => setIsMenuOpen((prev) => !prev)}
                     title="Chọn Usage Profile"
                 >
                     <span className="profile-chip-label">Profile:</span>
-                    <span className="profile-chip-name">{activeProfile?.name || 'None'}</span>
+                    <span className="profile-chip-name">{activeProfile?.name || 'Không'}</span>
                     <ChevronDown size={15} />
                 </button>
 
