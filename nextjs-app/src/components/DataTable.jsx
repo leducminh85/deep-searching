@@ -9,6 +9,38 @@ const removeAccents = (str) => {
     return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 };
 
+const DISPLAY_DATE_OFFSET_MINUTES = 7 * 60;
+
+const formatDateParts = (year, month, day) => {
+    const dd = String(day).padStart(2, '0');
+    const mm = String(month).padStart(2, '0');
+    return `${dd}/${mm}/${year}`;
+};
+
+const formatDateForDisplay = (value) => {
+    if (!value) return value;
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        const dateParts = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/);
+        const hasExplicitOffset = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed);
+
+        if (dateParts && !hasExplicitOffset) {
+            return formatDateParts(dateParts[1], dateParts[2], dateParts[3]);
+        }
+    }
+
+    const date = value instanceof Date ? value : new Date(value);
+    if (isNaN(date.getTime())) return value;
+
+    const displayDate = new Date(date.getTime() + DISPLAY_DATE_OFFSET_MINUTES * 60 * 1000);
+    return formatDateParts(
+        displayDate.getUTCFullYear(),
+        displayDate.getUTCMonth() + 1,
+        displayDate.getUTCDate()
+    );
+};
+
 const Highlight = ({ text, searches, enabled }) => {
     if (!enabled || !searches || searches.length === 0) return <span>{text}</span>;
 
@@ -910,16 +942,7 @@ const DataTable = ({
         }
 
         if (lowerHeader === 'date published' || header === 'Ngày đăng') {
-            try {
-                const date = new Date(value);
-                if (isNaN(date.getTime())) return value;
-                const d = date.getDate().toString().padStart(2, '0');
-                const m = (date.getMonth() + 1).toString().padStart(2, '0');
-                const y = date.getFullYear();
-                return `${d}/${m}/${y}`;
-            } catch (e) {
-                return value;
-            }
+            return formatDateForDisplay(value);
         }
 
         if (lowerHeader === 'summary' || header === 'Phân tích') {
