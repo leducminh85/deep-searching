@@ -404,31 +404,52 @@ export async function replaceUsedVideos(profileId, userEmail, records) {
     }
 }
 
-export async function listUsedVideos(userEmail, profileId, { page = 1, pageSize = 100 } = {}) {
+export async function listUsedVideos(userEmail, profileId, { page = 1, pageSize = 100, query = '' } = {}) {
     await ensureUsageSchema();
     const db = getPool();
     const offset = (page - 1) * pageSize;
+    const search = String(query || '').trim();
+    const params = [profileId, userEmail];
+    const conditions = [`pu.profile_id = $1`, `p.user_email = $2`];
+
+    if (search) {
+        params.push(`%${search}%`);
+        const searchParam = params.length;
+        conditions.push(`
+            (
+                pu.title ILIKE $${searchParam}
+                OR pu.url ILIKE $${searchParam}
+                OR pu.video_key ILIKE $${searchParam}
+                OR pu.occurrences::text ILIKE $${searchParam}
+            )
+        `);
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
     const countResult = await db.query(
         `
             SELECT COUNT(*) AS total
             FROM profile_used_videos pu
             INNER JOIN usage_profiles p ON p.id = pu.profile_id
-            WHERE pu.profile_id = $1 AND p.user_email = $2
+            ${whereClause}
         `,
-        [profileId, userEmail]
+        params
     );
 
+    const dataParams = [...params, pageSize, offset];
+    const limitParam = dataParams.length - 1;
+    const offsetParam = dataParams.length;
     const dataResult = await db.query(
         `
             SELECT pu.video_key, pu.url, pu.title, pu.thumbnail, pu.occurrences, pu.first_seen_at, pu.last_seen_at
             FROM profile_used_videos pu
             INNER JOIN usage_profiles p ON p.id = pu.profile_id
-            WHERE pu.profile_id = $1 AND p.user_email = $2
+            ${whereClause}
             ORDER BY pu.last_seen_at DESC, pu.id DESC
-            LIMIT $3 OFFSET $4
+            LIMIT $${limitParam} OFFSET $${offsetParam}
         `,
-        [profileId, userEmail, pageSize, offset]
+        dataParams
     );
 
     return {
@@ -444,5 +465,6 @@ export async function listUsedVideos(userEmail, profileId, { page = 1, pageSize 
         total: Number(countResult.rows[0]?.total || 0),
         page,
         page_size: pageSize,
+        query: search,
     };
 }

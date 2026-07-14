@@ -18,6 +18,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
     const [usedModalProfile, setUsedModalProfile] = useState(null);
     const [usedVideos, setUsedVideos] = useState([]);
     const [usedTotal, setUsedTotal] = useState(0);
+    const [usedSearch, setUsedSearch] = useState('');
     const [usedLoading, setUsedLoading] = useState(false);
     const [profileToDelete, setProfileToDelete] = useState(null);
     const [deletingId, setDeletingId] = useState(null);
@@ -26,6 +27,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
     const progressIntervalRef = useRef(null);
     const progressTimeoutRef = useRef(null);
     const autoSyncStartedRef = useRef(false);
+    const usedSearchDebounceRef = useRef(null);
 
     const notifyActiveProfile = (profile) => {
         setActiveProfile(profile);
@@ -320,6 +322,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
 
     const openUsedVideos = async (profile) => {
         setUsedModalProfile(profile);
+        setUsedSearch('');
         setUsedVideos([]);
         setUsedTotal(0);
         setUsedLoading(true);
@@ -339,6 +342,41 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
         }
     };
 
+    useEffect(() => {
+        if (!usedModalProfile) return;
+
+        if (usedSearchDebounceRef.current) {
+            clearTimeout(usedSearchDebounceRef.current);
+        }
+
+        usedSearchDebounceRef.current = setTimeout(async () => {
+            setUsedLoading(true);
+            setError('');
+
+            try {
+                const query = usedSearch.trim();
+                const searchParam = query ? `&q=${encodeURIComponent(query)}` : '';
+                const response = await fetch(`/api/profiles/${usedModalProfile.id}/used-videos?size=100${searchParam}`);
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(payload.error || 'Khong the tai video da dung');
+
+                setUsedVideos(payload.data || []);
+                setUsedTotal(payload.total || 0);
+            } catch (err) {
+                setError(err.message);
+            } finally {
+                setUsedLoading(false);
+            }
+        }, 300);
+
+        return () => {
+            if (usedSearchDebounceRef.current) {
+                clearTimeout(usedSearchDebounceRef.current);
+                usedSearchDebounceRef.current = null;
+            }
+        };
+    }, [usedSearch, usedModalProfile]);
+
     const formatDateTime = (value) => {
         if (!value) return 'Chưa sync';
         try {
@@ -350,6 +388,25 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
             return value;
         }
     };
+
+    const renderUsedVideoSkeletons = () => (
+        <div className="used-video-list" aria-label="Dang tai video da dung">
+            {Array.from({ length: 4 }).map((_, index) => (
+                <div key={`used-video-skeleton-${index}`} className="used-video-item used-video-skeleton">
+                    <div className="used-video-thumb skeleton-block" />
+                    <div className="used-video-body">
+                        <div className="skeleton-line title" />
+                        <div className="skeleton-line url" />
+                        <div className="used-video-occurrences">
+                            <span className="skeleton-pill" />
+                            <span className="skeleton-pill short" />
+                            <span className="skeleton-pill" />
+                        </div>
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
 
     const isAnySyncing = syncingId !== null;
 
@@ -597,7 +654,60 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
                             </button>
                         </div>
 
-                        {usedLoading ? (
+                        <div className="used-video-search">
+                            <input
+                                value={usedSearch}
+                                onChange={(event) => setUsedSearch(event.target.value)}
+                                placeholder="Tim theo title, URL, video key hoac Google Doc..."
+                                autoFocus
+                            />
+                            {usedSearch && (
+                                <button type="button" onClick={() => setUsedSearch('')} title="Xoa tim kiem">
+                                    <X size={16} />
+                                </button>
+                            )}
+                        </div>
+
+                        {usedLoading && renderUsedVideoSkeletons()}
+
+                        {!usedLoading && usedVideos.length === 0 ? (
+                            <div className="profile-empty">Profile nÃ y chÆ°a cÃ³ video Ä‘Ã£ dÃ¹ng. HÃ£y báº¥m Sync now.</div>
+                        ) : !usedLoading ? (
+                            <div className="used-video-list">
+                                {usedVideos.map((video) => (
+                                    <div key={video.video_key} className="used-video-item">
+                                        {video.thumbnail ? (
+                                            <img src={video.thumbnail} alt="" className="used-video-thumb" />
+                                        ) : (
+                                            <div className="used-video-thumb placeholder" />
+                                        )}
+                                        <div className="used-video-body">
+                                            <a href={video.url} target="_blank" rel="noopener noreferrer" className="used-video-title">
+                                                {video.title || video.url}
+                                            </a>
+                                            <div className="used-video-url">{video.url}</div>
+                                            <div className="used-video-occurrences">
+                                                {(video.occurrences || []).slice(0, 3).map((occurrence, index) => (
+                                                    <a
+                                                        key={`${video.video_key}-${index}`}
+                                                        href={occurrence.docUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                    >
+                                                        {occurrence.docTitle || 'Google Doc'} Â· {occurrence.sheetTab || 'Sheet'}!{occurrence.cell || '?'}
+                                                    </a>
+                                                ))}
+                                                {(video.occurrences || []).length > 3 && (
+                                                    <span>+{video.occurrences.length - 3} nguá»“n khÃ¡c</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : null}
+
+                        {false && (usedLoading ? (
                             <div className="profile-empty">Đang tải video đã dùng...</div>
                         ) : usedVideos.length === 0 ? (
                             <div className="profile-empty">Profile này chưa có video đã dùng. Hãy bấm Sync now.</div>
@@ -634,7 +744,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
                                     </div>
                                 ))}
                             </div>
-                        )}
+                        ))}
                     </div>
                 </div>
             )}
