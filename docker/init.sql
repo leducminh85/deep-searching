@@ -65,6 +65,20 @@ CREATE TABLE IF NOT EXISTS profile_used_videos (
     UNIQUE(profile_id, video_key)
 );
 
+CREATE TABLE IF NOT EXISTS profile_doc_syncs (
+    id BIGSERIAL PRIMARY KEY,
+    profile_id BIGINT NOT NULL REFERENCES usage_profiles(id) ON DELETE CASCADE,
+    doc_id TEXT NOT NULL,
+    doc_url TEXT NOT NULL,
+    title TEXT,
+    modified_time TIMESTAMPTZ,
+    videos JSONB NOT NULL DEFAULT '[]'::jsonb,
+    last_synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_error TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(profile_id, doc_id)
+);
+
 CREATE TABLE IF NOT EXISTS usage_user_settings (
     user_email TEXT PRIMARY KEY,
     active_profile_id BIGINT REFERENCES usage_profiles(id) ON DELETE SET NULL,
@@ -75,3 +89,5 @@ CREATE INDEX IF NOT EXISTS idx_usage_profiles_user_email ON usage_profiles(user_
 CREATE INDEX IF NOT EXISTS idx_profile_used_videos_profile_id ON profile_used_videos(profile_id);
 CREATE INDEX IF NOT EXISTS idx_profile_used_videos_video_key ON profile_used_videos(video_key);
 CREATE INDEX IF NOT EXISTS idx_profile_used_videos_url ON profile_used_videos(url);
+CREATE INDEX IF NOT EXISTS idx_profile_doc_syncs_profile_id ON profile_doc_syncs(profile_id);
+CREATE INDEX IF NOT EXISTS idx_profile_doc_syncs_doc_id ON profile_doc_syncs(doc_id);

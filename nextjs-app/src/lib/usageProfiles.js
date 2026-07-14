@@ -193,7 +193,7 @@ export async function setProfileSyncStatus(profileId, userEmail, status, error =
             UPDATE usage_profiles
             SET sync_status = $3,
                 sync_error = $4,
-                last_sync_at = CASE WHEN $3 = 'success' THEN NOW() ELSE last_sync_at END,
+                last_sync_at = CASE WHEN $3 IN ('success', 'success_with_warnings') THEN NOW() ELSE last_sync_at END,
                 updated_at = NOW()
             WHERE id = $1 AND user_email = $2
             RETURNING *
@@ -202,6 +202,108 @@ export async function setProfileSyncStatus(profileId, userEmail, status, error =
     );
 
     return normalizeProfile(result.rows[0]);
+}
+
+function normalizeDocSync(row) {
+    if (!row) return null;
+    return {
+        doc_id: row.doc_id,
+        doc_url: row.doc_url,
+        title: row.title || '',
+        modified_time: row.modified_time,
+        videos: Array.isArray(row.videos) ? row.videos : [],
+        last_synced_at: row.last_synced_at,
+        last_error: row.last_error || null,
+    };
+}
+
+export async function getProfileDocSyncs(profileId, userEmail, docIds = []) {
+    await ensureUsageSchema();
+    const ids = [...new Set((docIds || []).filter(Boolean))];
+    if (ids.length === 0) return new Map();
+
+    const db = getPool();
+    const result = await db.query(
+        `
+            SELECT ds.*
+            FROM profile_doc_syncs ds
+            INNER JOIN usage_profiles p ON p.id = ds.profile_id
+            WHERE ds.profile_id = $1
+              AND p.user_email = $2
+              AND ds.doc_id = ANY($3)
+        `,
+        [profileId, userEmail, ids]
+    );
+
+    return new Map(result.rows.map((row) => [row.doc_id, normalizeDocSync(row)]));
+}
+
+export async function upsertProfileDocSync(profileId, userEmail, docState) {
+    await ensureUsageSchema();
+    const db = getPool();
+    const result = await db.query(
+        `
+            INSERT INTO profile_doc_syncs
+                (profile_id, doc_id, doc_url, title, modified_time, videos, last_synced_at, last_error, updated_at)
+            SELECT $1, $3, $4, $5, $6, $7::jsonb, NOW(), $8, NOW()
+            WHERE EXISTS (
+                SELECT 1 FROM usage_profiles WHERE id = $1 AND user_email = $2
+            )
+            ON CONFLICT (profile_id, doc_id) DO UPDATE SET
+                doc_url = EXCLUDED.doc_url,
+                title = EXCLUDED.title,
+                modified_time = EXCLUDED.modified_time,
+                videos = EXCLUDED.videos,
+                last_synced_at = NOW(),
+                last_error = EXCLUDED.last_error,
+                updated_at = NOW()
+            RETURNING *
+        `,
+        [
+            profileId,
+            userEmail,
+            docState.docId,
+            docState.docUrl,
+            docState.title || '',
+            docState.modifiedTime || null,
+            JSON.stringify(docState.videos || []),
+            docState.error || null,
+        ]
+    );
+
+    return normalizeDocSync(result.rows[0]);
+}
+
+export async function pruneProfileDocSyncs(profileId, userEmail, docIds = []) {
+    await ensureUsageSchema();
+    const ids = [...new Set((docIds || []).filter(Boolean))];
+    const db = getPool();
+
+    if (ids.length === 0) {
+        await db.query(
+            `
+                DELETE FROM profile_doc_syncs ds
+                USING usage_profiles p
+                WHERE ds.profile_id = p.id
+                  AND ds.profile_id = $1
+                  AND p.user_email = $2
+            `,
+            [profileId, userEmail]
+        );
+        return;
+    }
+
+    await db.query(
+        `
+            DELETE FROM profile_doc_syncs ds
+            USING usage_profiles p
+            WHERE ds.profile_id = p.id
+              AND ds.profile_id = $1
+              AND p.user_email = $2
+              AND NOT (ds.doc_id = ANY($3))
+        `,
+        [profileId, userEmail, ids]
+    );
 }
 
 export async function enrichUsedVideoRecords(records) {
