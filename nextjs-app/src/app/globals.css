@@ -545,6 +545,11 @@ th {
   background: var(--primary-color);
 }
 
+.profile-chip.syncing {
+  border-color: rgba(14, 165, 233, 0.55);
+  color: #bae6fd;
+}
+
 .profile-chip-label {
   color: var(--text-muted);
   font-size: 0.72rem;
@@ -699,6 +704,78 @@ th {
   color: #fde68a;
   border-color: rgba(245, 158, 11, 0.3);
   background: rgba(245, 158, 11, 0.12);
+}
+
+.profile-sync-progress {
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  border-radius: 14px;
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.profile-sync-progress.status-success {
+  border-color: rgba(16, 185, 129, 0.32);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.profile-sync-progress.status-warning {
+  border-color: rgba(245, 158, 11, 0.34);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.profile-sync-progress.status-failed {
+  border-color: rgba(244, 63, 94, 0.34);
+  background: rgba(244, 63, 94, 0.1);
+}
+
+.profile-sync-progress-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: center;
+  color: var(--text-color);
+}
+
+.profile-sync-progress-head strong,
+.profile-sync-progress-head span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-sync-progress-head strong {
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.profile-sync-progress-head span {
+  margin-top: 0.18rem;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.profile-sync-progress-head b {
+  color: var(--primary-hover);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-sync-bar {
+  height: 8px;
+  margin-top: 0.75rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.profile-sync-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38bdf8, #6366f1, #22c55e);
+  transition: width 0.35s ease;
 }
 
 .profile-form {

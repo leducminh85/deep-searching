@@ -3,9 +3,13 @@ import fs from 'fs';
 import path from 'path';
 import {
     enrichUsedVideoRecords,
+    getProfileDocSyncs,
     getProfileForUser,
+    listProfiles,
+    pruneProfileDocSyncs,
     replaceUsedVideos,
     setProfileSyncStatus,
+    upsertProfileDocSync,
 } from './usageProfiles';
 import {
     extractYouTubeUrls,
@@ -16,6 +20,7 @@ import {
 const GOOGLE_SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets.readonly',
     'https://www.googleapis.com/auth/documents.readonly',
+    'https://www.googleapis.com/auth/drive.metadata.readonly',
 ];
 
 let tokenCache = null;
@@ -128,6 +133,21 @@ async function googleGetJson(url) {
     }
 
     return response.json();
+}
+
+async function readDriveFileMetadata(fileId) {
+    const params = new URLSearchParams({
+        fields: 'id,name,modifiedTime',
+        supportsAllDrives: 'true',
+    });
+
+    return googleGetJson(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${params.toString()}`
+    );
+}
+
+async function readDocMetadata(docId) {
+    return readDriveFileMetadata(docId);
 }
 
 function extractSpreadsheetId(sheetUrl) {
@@ -313,6 +333,115 @@ async function readDocVideos(docRef) {
     }));
 }
 
+function getTimeMs(value) {
+    if (!value) return null;
+    const time = new Date(value).getTime();
+    return Number.isNaN(time) ? null : time;
+}
+
+function canReuseDocCache(profile, cachedDoc, metadata) {
+    if (!cachedDoc || !metadata?.modifiedTime || !profile.last_sync_at) return false;
+    if (cachedDoc.last_error) return false;
+
+    const modifiedAt = getTimeMs(metadata.modifiedTime);
+    const cachedModifiedAt = getTimeMs(cachedDoc.modified_time);
+    const lastSyncAt = getTimeMs(profile.last_sync_at);
+    if (!modifiedAt || !lastSyncAt) return false;
+
+    return cachedModifiedAt ? modifiedAt <= cachedModifiedAt : modifiedAt <= lastSyncAt;
+}
+
+async function getAutoSyncDecision(profile) {
+    if (!profile.last_sync_at) {
+        return {
+            shouldSync: true,
+            reason: 'never_synced',
+            sheet_modified_time: null,
+            last_sync_at: null,
+        };
+    }
+
+    const spreadsheetId = extractSpreadsheetId(profile.google_sheet_url);
+    if (!spreadsheetId) {
+        return {
+            shouldSync: true,
+            reason: 'invalid_sheet_url',
+            sheet_modified_time: null,
+            last_sync_at: profile.last_sync_at,
+        };
+    }
+
+    const metadata = await readDriveFileMetadata(spreadsheetId);
+    const sheetModifiedAt = getTimeMs(metadata.modifiedTime);
+    const lastSyncAt = getTimeMs(profile.last_sync_at);
+
+    if (!sheetModifiedAt || !lastSyncAt) {
+        return {
+            shouldSync: true,
+            reason: 'missing_sheet_metadata',
+            sheet_modified_time: metadata.modifiedTime || null,
+            last_sync_at: profile.last_sync_at,
+            sheet_name: metadata.name || '',
+        };
+    }
+
+    const shouldSync = sheetModifiedAt > lastSyncAt;
+    return {
+        shouldSync,
+        reason: shouldSync ? 'sheet_modified' : 'sheet_unchanged',
+        sheet_modified_time: metadata.modifiedTime,
+        last_sync_at: profile.last_sync_at,
+        sheet_name: metadata.name || '',
+    };
+}
+
+function groupDocRefs(docRefs) {
+    const refsByDocId = new Map();
+    for (const docRef of docRefs) {
+        if (!refsByDocId.has(docRef.docId)) refsByDocId.set(docRef.docId, []);
+        refsByDocId.get(docRef.docId).push(docRef);
+    }
+    return refsByDocId;
+}
+
+function normalizeCachedVideos(videos) {
+    return Array.isArray(videos)
+        ? videos
+            .filter((video) => video?.url)
+            .map((video) => ({
+                url: video.url,
+                documentTitle: video.documentTitle || video.title || 'Untitled Google Doc',
+            }))
+        : [];
+}
+
+function addDocVideosToRecords(byVideoKey, docRefs, videos, syncedAt) {
+    for (const docRef of docRefs) {
+        for (const video of videos) {
+            const normalized = normalizeVideoUrl(video.url);
+            if (!normalized?.youtubeId) continue;
+
+            if (!byVideoKey.has(normalized.videoKey)) {
+                byVideoKey.set(normalized.videoKey, {
+                    videoKey: normalized.videoKey,
+                    url: normalized.canonicalUrl,
+                    title: '',
+                    thumbnail: getThumbnailForVideoUrl(normalized.canonicalUrl),
+                    occurrences: [],
+                });
+            }
+
+            byVideoKey.get(normalized.videoKey).occurrences.push({
+                docTitle: video.documentTitle || 'Untitled Google Doc',
+                docUrl: docRef.docUrl,
+                sheetTab: docRef.sheetTitle,
+                cell: docRef.cell,
+                syncedAt,
+            });
+        }
+    }
+}
+
 export async function syncUsageProfile(profileId, userEmail) {
     const profile = await getProfileForUser(profileId, userEmail);
     if (!profile) return null;
@@ -329,39 +458,86 @@ export async function syncUsageProfile(profileId, userEmail) {
         const byVideoKey = new Map();
         const warnings = [];
         const syncedAt = new Date().toISOString();
+        const refsByDocId = groupDocRefs(docRefs);
+        const uniqueDocIds = [...refsByDocId.keys()];
+        const cachedDocs = await getProfileDocSyncs(profileId, userEmail, uniqueDocIds);
 
-        for (const docRef of docRefs) {
+        await pruneProfileDocSyncs(profileId, userEmail, uniqueDocIds);
+
+        let refreshedDocCount = 0;
+        let skippedDocCount = 0;
+        let cachedFallbackDocCount = 0;
+        let metadataWarningCount = 0;
+
+        for (const [docId, refs] of refsByDocId.entries()) {
+            const primaryRef = refs[0];
+            const cachedDoc = cachedDocs.get(docId);
+            let metadata = null;
+
             try {
-                const videos = await readDocVideos(docRef);
-                for (const video of videos) {
-                    const normalized = normalizeVideoUrl(video.url);
-                    if (!normalized?.youtubeId) continue;
-
-                    if (!byVideoKey.has(normalized.videoKey)) {
-                        byVideoKey.set(normalized.videoKey, {
-                            videoKey: normalized.videoKey,
-                            url: normalized.canonicalUrl,
-                            title: '',
-                            thumbnail: getThumbnailForVideoUrl(normalized.canonicalUrl),
-                            occurrences: [],
-                        });
-                    }
-
-                    byVideoKey.get(normalized.videoKey).occurrences.push({
-                        docTitle: video.documentTitle,
-                        docUrl: docRef.docUrl,
-                        sheetTab: docRef.sheetTitle,
-                        cell: docRef.cell,
-                        syncedAt,
+                try {
+                    metadata = await readDocMetadata(docId);
+                } catch (err) {
+                    metadataWarningCount += 1;
+                    warnings.push({
+                        docUrl: primaryRef.docUrl,
+                        sheetTab: primaryRef.sheetTitle,
+                        cell: primaryRef.cell,
+                        error: `Khong doc duoc thoi diem sua Google Doc: ${err.message}. Da doc noi dung Doc truc tiep.`,
                     });
                 }
+
+                let videos = null;
+                let title = metadata?.name || cachedDoc?.title || 'Untitled Google Doc';
+
+                if (canReuseDocCache(profile, cachedDoc, metadata)) {
+                    videos = normalizeCachedVideos(cachedDoc.videos);
+                    skippedDocCount += 1;
+                } else {
+                    videos = await readDocVideos(primaryRef);
+                    refreshedDocCount += 1;
+
+                    const documentTitle = videos.find((video) => video.documentTitle)?.documentTitle || title;
+                    title = documentTitle;
+
+                    await upsertProfileDocSync(profileId, userEmail, {
+                        docId,
+                        docUrl: primaryRef.docUrl,
+                        title,
+                        modifiedTime: metadata?.modifiedTime || null,
+                        videos,
+                    });
+                }
+
+                addDocVideosToRecords(byVideoKey, refs, videos, syncedAt);
             } catch (err) {
-                warnings.push({
-                    docUrl: docRef.docUrl,
-                    sheetTab: docRef.sheetTitle,
-                    cell: docRef.cell,
-                    error: err.message,
-                });
+                const cachedVideos = normalizeCachedVideos(cachedDoc?.videos);
+                if (cachedDoc && cachedVideos.length > 0) {
+                    cachedFallbackDocCount += 1;
+                    addDocVideosToRecords(byVideoKey, refs, cachedVideos, syncedAt);
+                    warnings.push({
+                        docUrl: primaryRef.docUrl,
+                        sheetTab: primaryRef.sheetTitle,
+                        cell: primaryRef.cell,
+                        error: `${err.message}. Dang dung cache cu cua Google Doc nay.`,
+                    });
+                } else {
+                    warnings.push({
+                        docUrl: primaryRef.docUrl,
+                        sheetTab: primaryRef.sheetTitle,
+                        cell: primaryRef.cell,
+                        error: err.message,
+                    });
+
+                    await upsertProfileDocSync(profileId, userEmail, {
+                        docId,
+                        docUrl: primaryRef.docUrl,
+                        title: metadata?.name || cachedDoc?.title || 'Untitled Google Doc',
+                        modifiedTime: metadata?.modifiedTime || cachedDoc?.modified_time || null,
+                        videos: cachedVideos,
+                        error: err.message,
+                    });
+                }
             }
         }
 
@@ -394,6 +570,11 @@ export async function syncUsageProfile(profileId, userEmail) {
             profile: updatedProfile,
             used_count: count,
             doc_count: docRefs.length,
+            unique_doc_count: uniqueDocIds.length,
+            refreshed_doc_count: refreshedDocCount,
+            skipped_doc_count: skippedDocCount,
+            cached_fallback_doc_count: cachedFallbackDocCount,
+            metadata_warning_count: metadataWarningCount,
             tab_scope: profile.tab_scope,
             sheet_count: selectedSheetCount,
             sheet_titles: selectedSheetTitles,
@@ -403,4 +584,74 @@ export async function syncUsageProfile(profileId, userEmail) {
         await setProfileSyncStatus(profileId, userEmail, 'failed', err.message);
         throw err;
     }
+}
+
+export async function syncAllUsageProfiles(userEmail) {
+    const { profiles } = await listProfiles(userEmail);
+    const results = [];
+
+    for (const profile of profiles) {
+        let autoSyncDecision = null;
+
+        try {
+            try {
+                autoSyncDecision = await getAutoSyncDecision(profile);
+            } catch (err) {
+                autoSyncDecision = {
+                    shouldSync: true,
+                    reason: 'sheet_metadata_check_failed',
+                    check_error: err.message,
+                    sheet_modified_time: null,
+                    last_sync_at: profile.last_sync_at || null,
+                };
+            }
+
+            if (!autoSyncDecision.shouldSync) {
+                results.push({
+                    ok: true,
+                    skipped: true,
+                    profile_id: profile.id,
+                    name: profile.name,
+                    reason: autoSyncDecision.reason,
+                    sheet_modified_time: autoSyncDecision.sheet_modified_time,
+                    last_sync_at: autoSyncDecision.last_sync_at,
+                    sheet_name: autoSyncDecision.sheet_name || '',
+                });
+                continue;
+            }
+
+            const result = await syncUsageProfile(profile.id, userEmail);
+            results.push({
+                ok: Boolean(result),
+                skipped: false,
+                profile_id: profile.id,
+                name: profile.name,
+                auto_sync_reason: autoSyncDecision.reason,
+                auto_sync_check_error: autoSyncDecision.check_error || null,
+                sheet_modified_time: autoSyncDecision.sheet_modified_time,
+                last_sync_at: autoSyncDecision.last_sync_at,
+                sheet_name: autoSyncDecision.sheet_name || '',
+                ...(result || {}),
+            });
+        } catch (err) {
+            results.push({
+                ok: false,
+                skipped: false,
+                profile_id: profile.id,
+                name: profile.name,
+                auto_sync_reason: autoSyncDecision?.reason || 'unknown',
+                sheet_modified_time: autoSyncDecision?.sheet_modified_time || null,
+                last_sync_at: autoSyncDecision?.last_sync_at || profile.last_sync_at || null,
+                error: err.message,
+            });
+        }
+    }
+
+    return {
+        profile_count: profiles.length,
+        synced_count: results.filter((result) => result.ok && !result.skipped).length,
+        skipped_count: results.filter((result) => result.skipped).length,
+        failed_count: results.filter((result) => !result.ok).length,
+        results,
+    };
 }

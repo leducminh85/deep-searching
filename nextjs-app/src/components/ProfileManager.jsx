@@ -21,15 +21,101 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
     const [usedLoading, setUsedLoading] = useState(false);
     const [profileToDelete, setProfileToDelete] = useState(null);
     const [deletingId, setDeletingId] = useState(null);
+    const [syncProgress, setSyncProgress] = useState(null);
     const menuRef = useRef(null);
+    const progressIntervalRef = useRef(null);
+    const progressTimeoutRef = useRef(null);
+    const autoSyncStartedRef = useRef(false);
 
     const notifyActiveProfile = (profile) => {
         setActiveProfile(profile);
         onActiveProfileChange?.(profile);
     };
 
-    const fetchProfiles = async () => {
-        setLoading(true);
+    const clearProgressTimers = () => {
+        if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+        }
+        if (progressTimeoutRef.current) {
+            clearTimeout(progressTimeoutRef.current);
+            progressTimeoutRef.current = null;
+        }
+    };
+
+    const startSyncProgress = (label, profileId = null) => {
+        clearProgressTimers();
+        setSyncProgress({
+            profileId,
+            label,
+            percent: 8,
+            message: '',
+            status: 'running',
+        });
+
+        progressIntervalRef.current = setInterval(() => {
+            setSyncProgress((prev) => {
+                if (!prev || prev.status !== 'running') return prev;
+                const increment = Math.max(1, Math.round((92 - prev.percent) * 0.12));
+                return {
+                    ...prev,
+                    percent: Math.min(92, prev.percent + increment),
+                };
+            });
+        }, 450);
+    };
+
+    const finishSyncProgress = (message, status = 'success') => {
+        clearProgressTimers();
+        setSyncProgress((prev) => prev ? {
+            ...prev,
+            percent: 100,
+            message,
+            status,
+        } : null);
+
+        progressTimeoutRef.current = setTimeout(() => {
+            setSyncProgress(null);
+        }, status === 'failed' ? 3200 : 1800);
+    };
+
+    const formatSyncSummary = (payload) => {
+        if (!payload) return 'Sync xong';
+
+        const usedCount = Number(payload.used_count || 0).toLocaleString('vi-VN');
+        const refreshed = Number(payload.refreshed_doc_count || 0).toLocaleString('vi-VN');
+        const skipped = Number(payload.skipped_doc_count || 0).toLocaleString('vi-VN');
+        const warnings = Number(payload.warning_count || 0);
+
+        if (warnings > 0) {
+            return `Xong ${usedCount} video, doc moi/sua: ${refreshed}, bo qua: ${skipped}, can xem ${warnings} canh bao.`;
+        }
+
+        return `Xong ${usedCount} video, doc moi/sua: ${refreshed}, bo qua ${skipped} doc khong doi.`;
+    };
+
+    const formatSyncAllSummary = (payload) => {
+        if (!payload) return 'Auto sync xong';
+
+        const results = payload.results || [];
+        const refreshed = results.reduce((sum, item) => sum + Number(item.refreshed_doc_count || 0), 0);
+        const skipped = results.reduce((sum, item) => sum + Number(item.skipped_doc_count || 0), 0);
+        const skippedProfiles = Number(payload.skipped_count || 0);
+        const failed = Number(payload.failed_count || 0);
+
+        if (failed > 0) {
+            return `Auto sync xong ${payload.synced_count || 0}/${payload.profile_count || 0} profile, bo qua ${skippedProfiles}, ${failed} profile loi.`;
+        }
+
+        if (skippedProfiles > 0 && Number(payload.synced_count || 0) === 0) {
+            return `Auto sync bo qua ${skippedProfiles} profile vi Google Sheet khong doi.`;
+        }
+
+        return `Auto sync xong ${payload.synced_count || 0} profile, bo qua ${skippedProfiles} profile, doc moi/sua: ${refreshed}, bo qua doc: ${skipped}.`;
+    };
+
+    const fetchProfiles = async ({ showLoading = true } = {}) => {
+        if (showLoading) setLoading(true);
         setError('');
         try {
             const response = await fetch('/api/profiles');
@@ -40,15 +126,32 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
             const payload = await response.json();
             setProfiles(payload.profiles || []);
             notifyActiveProfile(payload.activeProfile || null);
+            return payload;
         } catch (err) {
             setError(err.message);
+            return null;
         } finally {
-            setLoading(false);
+            if (showLoading) setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchProfiles();
+        let cancelled = false;
+
+        const loadAndSync = async () => {
+            const payload = await fetchProfiles();
+            if (cancelled || autoSyncStartedRef.current || !payload?.profiles?.length) return;
+
+            autoSyncStartedRef.current = true;
+            await syncAllProfiles();
+        };
+
+        loadAndSync();
+
+        return () => {
+            cancelled = true;
+            clearProgressTimers();
+        };
     }, []);
 
     useEffect(() => {
@@ -84,6 +187,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
         setError('');
 
         try {
+            const isEditing = Boolean(editingId);
             const url = editingId ? `/api/profiles/${editingId}` : '/api/profiles';
             const response = await fetch(url, {
                 method: editingId ? 'PATCH' : 'POST',
@@ -93,8 +197,16 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
             const payload = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(payload.error || 'Không thể lưu profile');
 
+            const createdProfile = !isEditing ? payload.profile : null;
             resetForm();
             await fetchProfiles();
+
+            if (createdProfile) {
+                setSaving(false);
+                await syncProfile(createdProfile, {
+                    label: `Dang kiem tra link va sync ${createdProfile.name}`,
+                });
+            }
         } catch (err) {
             setError(err.message);
         } finally {
@@ -161,9 +273,10 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
         }
     };
 
-    const syncProfile = async (profile) => {
+    const syncProfile = async (profile, options = {}) => {
         setSyncingId(profile.id);
         setError('');
+        startSyncProgress(options.label || `Dang sync ${profile.name}`, profile.id);
         try {
             const response = await fetch(`/api/profiles/${profile.id}/sync`, { method: 'POST' });
             const payload = await response.json().catch(() => ({}));
@@ -171,8 +284,35 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
 
             await fetchProfiles();
             if (activeProfile?.id === profile.id) onUsageChanged?.();
+            finishSyncProgress(formatSyncSummary(payload), payload.warning_count > 0 ? 'warning' : 'success');
+            return payload;
         } catch (err) {
             setError(err.message);
+            finishSyncProgress(err.message, 'failed');
+            return null;
+        } finally {
+            setSyncingId(null);
+        }
+    };
+
+    const syncAllProfiles = async () => {
+        setSyncingId('all');
+        setError('');
+        startSyncProgress('Dang tu dong sync cac profile', 'all');
+
+        try {
+            const response = await fetch('/api/profiles/sync-all', { method: 'POST' });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.error || 'Khong the auto sync profile');
+
+            await fetchProfiles({ showLoading: false });
+            if (Number(payload.synced_count || 0) > 0) onUsageChanged?.();
+            finishSyncProgress(formatSyncAllSummary(payload), Number(payload.failed_count || 0) > 0 ? 'warning' : 'success');
+            return payload;
+        } catch (err) {
+            setError(err.message);
+            finishSyncProgress(err.message, 'failed');
+            return null;
         } finally {
             setSyncingId(null);
         }
@@ -211,17 +351,19 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
         }
     };
 
+    const isAnySyncing = syncingId !== null;
+
     return (
         <>
             <div className="profile-menu-wrap" ref={menuRef}>
                 <button
-                    className="profile-chip tour-profile"
+                    className={`profile-chip tour-profile ${isAnySyncing ? 'syncing' : ''}`}
                     onClick={() => setIsMenuOpen((prev) => !prev)}
                     title="Chọn Usage Profile"
                 >
                     <span className="profile-chip-label">Profile:</span>
                     <span className="profile-chip-name">{activeProfile?.name || 'Không'}</span>
-                    <ChevronDown size={15} />
+                    {isAnySyncing ? <RefreshCw size={15} className="spin-icon" /> : <ChevronDown size={15} />}
                 </button>
 
                 {isMenuOpen && (
@@ -276,6 +418,22 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
                         </div>
 
                         {error && <div className="profile-error">{error}</div>}
+
+                        {syncProgress && (
+                            <div className={`profile-sync-progress status-${syncProgress.status}`}>
+                                <div className="profile-sync-progress-head">
+                                    <RefreshCw size={16} className={syncProgress.status === 'running' ? 'spin-icon' : ''} />
+                                    <div>
+                                        <strong>{syncProgress.label}</strong>
+                                        <span>{syncProgress.message || `${syncProgress.percent}%`}</span>
+                                    </div>
+                                    <b>{syncProgress.percent}%</b>
+                                </div>
+                                <div className="profile-sync-bar">
+                                    <span style={{ width: `${syncProgress.percent}%` }} />
+                                </div>
+                            </div>
+                        )}
 
                         {!isFormOpen ? (
                             <button
@@ -371,7 +529,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
                                             {profile.sync_error && <div className="profile-warning">{profile.sync_error}</div>}
                                         </div>
                                         <div className="profile-card-actions">
-                                            <button onClick={() => syncProfile(profile)} disabled={isSyncing} title="Sync Google Sheet/Docs">
+                                            <button onClick={() => syncProfile(profile)} disabled={isAnySyncing} title="Sync Google Sheet/Docs">
                                                 <RefreshCw size={16} className={isSyncing ? 'spin-icon' : ''} />
                                             </button>
                                             <button onClick={() => openUsedVideos(profile)} title="Xem video đã dùng">
