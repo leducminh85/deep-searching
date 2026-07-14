@@ -17,13 +17,13 @@ export async function GET(request, { params }) {
     const { searchParams } = new URL(request.url);
     const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
     const size = Math.min(Math.max(parseInt(searchParams.get('size') || '100', 10), 1), 500);
+    const query = searchParams.get('q') || '';
 
     try {
-        const data = await listUsedVideos(user.email, id, { page, pageSize: size });
+        const data = await listUsedVideos(user.email, id, { page, pageSize: size, query });
         return NextResponse.json(data);
     } catch (err) {
         console.error('Failed to list used videos:', err);
         return NextResponse.json({ error: err.message }, { status: 500 });
     }
 }
-
