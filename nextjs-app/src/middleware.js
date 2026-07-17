@@ -1,17 +1,15 @@
-import { NextResponse } from 'next/server'
+import { updateSession } from './utils/supabase/middleware'
 
-export function middleware(request) {
-  // Chuyển hướng ngay lập tức sang domain mới mà không cần kiểm tra
-  return NextResponse.redirect('https://deep-seach.wevic.vn/', 301)
+export async function middleware(request) {
+  return updateSession(request)
 }
 
 export const config = {
   matcher: [
     /*
-     * Áp dụng cho trang chủ và các đường dẫn khác, 
-     * ngoại trừ các tệp tĩnh và API để không làm treo ứng dụng
+     * Apply auth/session middleware to pages and API routes, while skipping
+     * Next internals and static assets.
      */
-    '/',
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

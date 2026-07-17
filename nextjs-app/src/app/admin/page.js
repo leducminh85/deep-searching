@@ -34,7 +34,7 @@ export default function AdminPageRoute() {
   };
 
   return (
-    <div className="container">
+    <div className="container admin-page">
       <header className="header">
         <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <img src="/logo.png" alt="Wevic Logo" style={{ width: '40px', height: '40px', borderRadius: '10px' }} />
