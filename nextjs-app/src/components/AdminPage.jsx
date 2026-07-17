@@ -101,6 +101,12 @@ export default function AdminPage() {
     const [confirmBusy, setConfirmBusy] = useState(false);
     const [videosState, setVideosState] = useState({ loading: false, videos: [], total: 0, page: 1 });
 
+    const toast = error
+        ? { type: 'danger', icon: <AlertCircle size={18} />, message: error }
+        : notice
+            ? { type: 'success', icon: <CheckCircle2 size={18} />, message: notice }
+            : null;
+
     const selectedChannel = useMemo(
         () => channels.find((channel) => String(channel.id) === String(selectedChannelId)) || null,
         [channels, selectedChannelId]
@@ -230,6 +236,15 @@ export default function AdminPage() {
         window.addEventListener('click', closeMenu);
         return () => window.removeEventListener('click', closeMenu);
     }, []);
+
+    useEffect(() => {
+        if (!notice && !error) return undefined;
+        const timer = window.setTimeout(() => {
+            setNotice('');
+            setError('');
+        }, error ? 5200 : 4200);
+        return () => window.clearTimeout(timer);
+    }, [notice, error]);
 
     const openChannelMenu = (event, channel) => {
         event.stopPropagation();
@@ -509,8 +524,22 @@ export default function AdminPage() {
                 </button>
             </section>
 
-            {notice && <div className="admin-alert success"><CheckCircle2 size={16} />{notice}</div>}
-            {error && <div className="admin-alert danger"><AlertCircle size={16} />{error}</div>}
+            {toast && (
+                <div className={`admin-toast ${toast.type}`} role="status" aria-live="polite">
+                    {toast.icon}
+                    <span>{toast.message}</span>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setNotice('');
+                            setError('');
+                        }}
+                        aria-label="Đóng thông báo"
+                    >
+                        ×
+                    </button>
+                </div>
+            )}
 
             <div className="admin-grid">
             <section className="admin-panel">
