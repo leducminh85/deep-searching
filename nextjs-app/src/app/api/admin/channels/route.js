@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { listAdminChannels, upsertAdminChannel } from '../../../../lib/adminDb';
+import { findExistingAdminChannelByUrl, listAdminChannels, upsertAdminChannel } from '../../../../lib/adminDb';
 import { requireAdmin } from '../../../../lib/adminAuth';
 import { startChannelSync } from '../../../../lib/youtubeChannelSync';
 
@@ -25,6 +25,14 @@ export async function POST(request) {
 
         if (!channelUrl) {
             return NextResponse.json({ error: 'Vui lòng nhập URL kênh YouTube' }, { status: 400 });
+        }
+
+        const existingChannel = await findExistingAdminChannelByUrl(channelUrl);
+        if (existingChannel) {
+            return NextResponse.json({
+                error: 'Kênh đã tồn tại',
+                channel: existingChannel,
+            }, { status: 409 });
         }
 
         const channel = await upsertAdminChannel({

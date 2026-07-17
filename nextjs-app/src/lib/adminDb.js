@@ -13,6 +13,52 @@ export function normalizeChannelStatus(status) {
     return CHANNEL_STATUSES.has(value) ? value : 'normal';
 }
 
+function buildChannelLookup(rawUrl) {
+    const value = String(rawUrl || '').trim();
+    const variants = new Set();
+    let channelId = '';
+
+    const addVariant = (candidate) => {
+        const normalized = String(candidate || '')
+            .trim()
+            .replace(/\/(?:videos|featured|about|shorts|streams)\/?$/i, '')
+            .replace(/\/+$/g, '')
+            .toLowerCase();
+        if (normalized) variants.add(normalized);
+    };
+
+    addVariant(value);
+
+    const handleMatch = value.match(/(?:youtube\.com\/)?@([\w.-]+)/i) || value.match(/^@([\w.-]+)$/i);
+    if (handleMatch) {
+        channelId = `@${handleMatch[1]}`.toLowerCase();
+        addVariant(`https://www.youtube.com/${channelId}`);
+        addVariant(`https://youtube.com/${channelId}`);
+    }
+
+    const channelIdMatch = value.match(/(?:youtube\.com\/)?channel\/(UC[\w-]{22})/i);
+    if (channelIdMatch) {
+        channelId = channelIdMatch[1].toLowerCase();
+        addVariant(`https://www.youtube.com/channel/${channelIdMatch[1]}`);
+        addVariant(`https://youtube.com/channel/${channelIdMatch[1]}`);
+    }
+
+    try {
+        const parsed = new URL(value);
+        const path = parsed.pathname
+            .replace(/\/(?:videos|featured|about|shorts|streams)\/?$/i, '')
+            .replace(/\/+$/g, '');
+        if (/youtube\.com$/i.test(parsed.hostname) && path) {
+            addVariant(`https://www.youtube.com${path}`);
+            addVariant(`https://youtube.com${path}`);
+        }
+    } catch {
+        // Plain handles are handled above.
+    }
+
+    return { variants: Array.from(variants), channelId };
+}
+
 export async function ensureAdminSchema() {
     if (adminSchemaPromise) return adminSchemaPromise;
 
@@ -250,6 +296,27 @@ export async function getAdminChannel(id) {
     await ensureAdminSchema();
     const db = getPool();
     const result = await db.query(`SELECT * FROM channel_sources WHERE id = $1`, [id]);
+    return result.rows[0] || null;
+}
+
+export async function findExistingAdminChannelByUrl(channelUrl) {
+    await ensureAdminSchema();
+    const db = getPool();
+    const lookup = buildChannelLookup(channelUrl);
+    const result = await db.query(`
+        SELECT *
+        FROM channel_sources
+        WHERE lower(coalesce(channel_url, '')) = ANY($1)
+           OR lower(coalesce(source_channel_url, '')) = ANY($1)
+           OR regexp_replace(lower(coalesce(channel_url, '')), '/(videos|featured|about|shorts|streams)/?$', '') = ANY($1)
+           OR regexp_replace(lower(coalesce(source_channel_url, '')), '/(videos|featured|about|shorts|streams)/?$', '') = ANY($1)
+           OR ($2 <> '' AND lower(coalesce(channel_id, '')) = $2)
+        ORDER BY
+            CASE WHEN $2 <> '' AND lower(coalesce(channel_id, '')) = $2 THEN 0 ELSE 1 END,
+            channel_thumbnail IS NULL,
+            updated_at DESC
+        LIMIT 1
+    `, [lookup.variants, lookup.channelId]);
     return result.rows[0] || null;
 }
 
