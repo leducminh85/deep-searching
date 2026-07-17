@@ -278,7 +278,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
     const syncProfile = async (profile, options = {}) => {
         setSyncingId(profile.id);
         setError('');
-        startSyncProgress(options.label || `Dang sync ${profile.name}`, profile.id);
+        startSyncProgress(options.label || `Đồng bộ ${profile.name}`, profile.id);
         try {
             const response = await fetch(`/api/profiles/${profile.id}/sync`, { method: 'POST' });
             const payload = await response.json().catch(() => ({}));
@@ -300,12 +300,12 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
     const syncAllProfiles = async () => {
         setSyncingId('all');
         setError('');
-        startSyncProgress('Dang tu dong sync cac profile', 'all');
+        startSyncProgress('Đang tự động đồng bộ các profile', 'all');
 
         try {
             const response = await fetch('/api/profiles/sync-all', { method: 'POST' });
             const payload = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(payload.error || 'Khong the auto sync profile');
+            if (!response.ok) throw new Error(payload.error || 'Lỗi đồng bộ profile');
 
             await fetchProfiles({ showLoading: false });
             if (Number(payload.synced_count || 0) > 0) onUsageChanged?.();
@@ -578,7 +578,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
                                                 Google Sheet <ExternalLink size={13} />
                                             </a>
                                             <div className="profile-meta">
-                                                <span>{Number(profile.used_count || 0).toLocaleString('vi-VN')} video đã dùng</span>
+                                                <span>{Number(profile.used_count || 0).toLocaleString('vi-VN')} videos</span>
                                                 <span>{profile.tab_scope === 'all' ? 'Tất cả tabs' : 'Tab hiện tại'}</span>
                                                 <span>Sync: {formatDateTime(profile.last_sync_at)}</span>
                                                 <span className={`profile-sync-status status-${profile.sync_status}`}>{profile.sync_status}</span>
@@ -671,7 +671,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
                         {usedLoading && renderUsedVideoSkeletons()}
 
                         {!usedLoading && usedVideos.length === 0 ? (
-                            <div className="profile-empty">Profile nÃ y chÆ°a cÃ³ video Ä‘Ã£ dÃ¹ng. HÃ£y báº¥m Sync now.</div>
+                            <div className="profile-empty">Không tìm thấy</div>
                         ) : !usedLoading ? (
                             <div className="used-video-list">
                                 {usedVideos.map((video) => (
