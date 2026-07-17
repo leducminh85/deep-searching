@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { deleteChannelAndVideos, getAdminChannel, updateAdminChannelStatus, updateAdminChannelVisibility } from '../../../../../lib/adminDb';
+import { deleteChannelAndVideos, getAdminChannel, updateAdminChannelStatus, updateAdminChannelUrl, updateAdminChannelVisibility } from '../../../../../lib/adminDb';
 import { requireAdmin } from '../../../../../lib/adminAuth';
-import { startChannelSync } from '../../../../../lib/youtubeChannelSync';
+import { startChannelMetadataSync, startChannelSync } from '../../../../../lib/youtubeChannelSync';
 
 export async function PATCH(request, { params }) {
     const unauthorized = await requireAdmin();
@@ -11,6 +11,15 @@ export async function PATCH(request, { params }) {
         const { id } = await params;
         const body = await request.json();
         let channel = null;
+
+        if (Object.prototype.hasOwnProperty.call(body, 'channel_url')) {
+            const channelUrl = String(body.channel_url || '').trim();
+            if (!channelUrl) {
+                return NextResponse.json({ error: 'Vui lòng nhập URL kênh YouTube' }, { status: 400 });
+            }
+            channel = await updateAdminChannelUrl(id, channelUrl);
+            if (channel) startChannelMetadataSync(channel);
+        }
 
         if (Object.prototype.hasOwnProperty.call(body, 'hidden')) {
             channel = await updateAdminChannelVisibility(id, body.hidden);

@@ -827,15 +827,13 @@ tr:last-child td {
 }
 
 .admin-action-menu {
-  position: absolute;
-  top: calc(100% + 0.4rem);
-  right: 0;
-  z-index: 40;
-  min-width: 180px;
+  position: fixed;
+  z-index: 10001;
+  min-width: 200px;
   padding: 0.35rem;
   background: var(--surface-color);
   border: 1px solid var(--glass-border);
-  border-radius: 10px;
+  border-radius: 8px;
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
 }
 
@@ -861,6 +859,84 @@ tr:last-child td {
 
 .admin-action-menu button.danger {
   color: #fb7185;
+}
+
+.admin-modal-overlay {
+  padding: 1rem;
+}
+
+.admin-modal {
+  max-width: 520px;
+  border-radius: 8px;
+  padding: 1.4rem;
+  background: var(--surface-color);
+}
+
+.admin-modal-header {
+  margin-bottom: 1.2rem;
+}
+
+.admin-modal-header p {
+  margin: 0.45rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.admin-field {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.admin-field span {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.admin-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 0.85rem;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.42);
+  color: var(--text-color);
+  outline: none;
+}
+
+.admin-field input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}
+
+.admin-modal-note {
+  margin: 0.85rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.admin-modal .modal-footer {
+  margin-top: 1.35rem;
+}
+
+.admin-modal .modal-btn-confirm,
+.admin-modal .modal-btn-cancel {
+  min-height: 42px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.admin-modal .modal-btn-confirm.danger {
+  background: #e11d48;
+}
+
+.admin-modal .modal-btn-confirm.danger:hover {
+  background: #be123c;
 }
 
 .admin-video-panel {

@@ -12,6 +12,7 @@ import {
     Loader2,
     Lock,
     MoreVertical,
+    Pencil,
     Plus,
     RefreshCcw,
     Search,
@@ -83,6 +84,12 @@ export default function AdminPage() {
     const [query, setQuery] = useState('');
     const [selectedChannelId, setSelectedChannelId] = useState(null);
     const [openMenuId, setOpenMenuId] = useState(null);
+    const [menuPosition, setMenuPosition] = useState(null);
+    const [editingChannel, setEditingChannel] = useState(null);
+    const [editChannelUrl, setEditChannelUrl] = useState('');
+    const [savingChannelUrl, setSavingChannelUrl] = useState(false);
+    const [confirmModal, setConfirmModal] = useState(null);
+    const [confirmBusy, setConfirmBusy] = useState(false);
     const [videosState, setVideosState] = useState({ loading: false, videos: [], total: 0, page: 1 });
 
     const selectedChannel = useMemo(
@@ -177,10 +184,34 @@ export default function AdminPage() {
     }, [authenticated, selectedChannelId]);
 
     useEffect(() => {
-        const closeMenu = () => setOpenMenuId(null);
+        const closeMenu = () => {
+            setOpenMenuId(null);
+            setMenuPosition(null);
+        };
         window.addEventListener('click', closeMenu);
         return () => window.removeEventListener('click', closeMenu);
     }, []);
+
+    const openChannelMenu = (event, channel) => {
+        event.stopPropagation();
+        const rect = event.currentTarget.getBoundingClientRect();
+        const width = 208;
+        const height = 184;
+        const left = Math.min(window.innerWidth - width - 12, Math.max(12, rect.right - width));
+        const top = rect.bottom + height > window.innerHeight - 12
+            ? Math.max(12, rect.top - height - 8)
+            : rect.bottom + 8;
+
+        setMenuPosition({ top, left });
+        setOpenMenuId((current) => current === channel.id ? null : channel.id);
+    };
+
+    const openEditChannel = (channel) => {
+        setOpenMenuId(null);
+        setMenuPosition(null);
+        setEditingChannel(channel);
+        setEditChannelUrl(channel.channel_url || channel.source_channel_url || '');
+    };
 
     const handleLogin = async (event) => {
         event.preventDefault();
@@ -267,7 +298,35 @@ export default function AdminPage() {
         }
     };
 
+    const handleSaveChannelUrl = async (event) => {
+        event.preventDefault();
+        if (!editingChannel) return;
+
+        setSavingChannelUrl(true);
+        setNotice('');
+        setError('');
+        try {
+            const response = await fetch(`/api/admin/channels/${editingChannel.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel_url: editChannelUrl }),
+            });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Không thể cập nhật URL kênh');
+            setNotice('Đã cập nhật URL. Đang fetch lại logo, tên kênh và ID.');
+            setEditingChannel(null);
+            setEditChannelUrl('');
+            await loadChannels();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSavingChannelUrl(false);
+        }
+    };
+
     const handleRefreshChannel = async (channel) => {
+        setOpenMenuId(null);
+        setMenuPosition(null);
         setNotice('');
         setError('');
         try {
@@ -282,21 +341,37 @@ export default function AdminPage() {
     };
 
     const handleDeleteChannel = async (channel) => {
-        const confirmed = window.confirm(`Xóa kênh "${channel.channel_name}" và toàn bộ video thuộc kênh này?`);
-        if (!confirmed) return;
+        setOpenMenuId(null);
+        setMenuPosition(null);
+        setConfirmModal({
+            title: 'Xóa kênh?',
+            message: `Xóa kênh "${channel.channel_name}" và toàn bộ video thuộc kênh này?`,
+            confirmLabel: 'Xóa kênh',
+            danger: true,
+            onConfirm: async () => {
+                setNotice('');
+                setError('');
+                const response = await fetch(`/api/admin/channels/${channel.id}`, { method: 'DELETE' });
+                const payload = await response.json();
+                if (!response.ok) throw new Error(payload.error || 'Không thể xóa kênh');
+                setNotice(`Đã xóa ${payload.deleted_videos || 0} video của kênh ${channel.channel_name}`);
+                setSelectedChannelId(null);
+                setVideosState({ loading: false, videos: [], total: 0, page: 1 });
+                await loadChannels();
+            },
+        });
+    };
 
-        setNotice('');
-        setError('');
+    const runConfirmAction = async () => {
+        if (!confirmModal?.onConfirm) return;
+        setConfirmBusy(true);
         try {
-            const response = await fetch(`/api/admin/channels/${channel.id}`, { method: 'DELETE' });
-            const payload = await response.json();
-            if (!response.ok) throw new Error(payload.error || 'Không thể xóa kênh');
-            setNotice(`Đã xóa ${payload.deleted_videos || 0} video của kênh ${channel.channel_name}`);
-            setSelectedChannelId(null);
-            setVideosState({ loading: false, videos: [], total: 0, page: 1 });
-            await loadChannels();
+            await confirmModal.onConfirm();
+            setConfirmModal(null);
         } catch (err) {
             setError(err.message);
+        } finally {
+            setConfirmBusy(false);
         }
     };
 
@@ -450,25 +525,34 @@ export default function AdminPage() {
                                             <div className="admin-menu-wrap" onClick={(event) => event.stopPropagation()}>
                                                 <button
                                                     className="admin-icon-btn"
-                                                    onClick={(event) => {
-                                                        event.stopPropagation();
-                                                        setOpenMenuId((current) => current === channel.id ? null : channel.id);
-                                                    }}
+                                                    onClick={(event) => openChannelMenu(event, channel)}
                                                     title="Thao tác"
                                                 >
                                                     <MoreVertical size={18} />
                                                 </button>
                                                 {openMenuId === channel.id && (
-                                                    <div className="admin-action-menu">
-                                                        <button onClick={() => handleRefreshChannel(channel)}>
+                                                    <div className="admin-action-menu" style={menuPosition || undefined}>
+                                                        <button type="button" onClick={() => openEditChannel(channel)}>
+                                                            <Pencil size={16} />
+                                                            Sửa URL
+                                                        </button>
+                                                        <button type="button" onClick={() => handleRefreshChannel(channel)}>
                                                             <RefreshCcw size={16} />
                                                             Đồng bộ
                                                         </button>
-                                                        <button onClick={() => patchChannel(channel, { hidden: !channel.hidden }, { hidden: !channel.hidden })}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setOpenMenuId(null);
+                                                                setMenuPosition(null);
+                                                                patchChannel(channel, { hidden: !channel.hidden }, { hidden: !channel.hidden });
+                                                            }}
+                                                        >
                                                             {channel.hidden ? <Eye size={16} /> : <EyeOff size={16} />}
                                                             {channel.hidden ? 'Hiện trên web' : 'Ẩn khỏi web'}
                                                         </button>
                                                         <button
+                                                            type="button"
                                                             className="danger"
                                                             onClick={() => handleDeleteChannel(channel)}
                                                         >
@@ -566,6 +650,60 @@ export default function AdminPage() {
             </section>
             </div>
 
+            {editingChannel && (
+                <div className="modal-overlay admin-modal-overlay" onClick={() => setEditingChannel(null)}>
+                    <form className="modal-container admin-modal" onSubmit={handleSaveChannelUrl} onClick={(event) => event.stopPropagation()}>
+                        <div className="modal-header admin-modal-header">
+                            <h2>Sửa URL kênh</h2>
+                            <p>{editingChannel.channel_name}</p>
+                        </div>
+                        <label className="admin-field">
+                            <span>URL kênh YouTube</span>
+                            <input
+                                value={editChannelUrl}
+                                onChange={(event) => setEditChannelUrl(event.target.value)}
+                                placeholder="https://www.youtube.com/@channel"
+                                autoFocus
+                            />
+                        </label>
+            
+                        <div className="modal-footer">
+                            <button className="modal-btn-cancel" type="button" onClick={() => setEditingChannel(null)}>
+                                Hủy
+                            </button>
+                            <button className="modal-btn-confirm" type="submit" disabled={savingChannelUrl || !editChannelUrl.trim()}>
+                                {savingChannelUrl ? <Loader2 className="spin" size={16} /> : null}
+                                Lưu
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {confirmModal && (
+                <div className="modal-overlay admin-modal-overlay" onClick={() => !confirmBusy && setConfirmModal(null)}>
+                    <section className="modal-container admin-modal" onClick={(event) => event.stopPropagation()}>
+                        <div className="modal-header admin-modal-header">
+                            <h2>{confirmModal.title}</h2>
+                            <p>{confirmModal.message}</p>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="modal-btn-cancel" type="button" disabled={confirmBusy} onClick={() => setConfirmModal(null)}>
+                                Hủy
+                            </button>
+                            <button
+                                className={`modal-btn-confirm ${confirmModal.danger ? 'danger' : ''}`}
+                                type="button"
+                                disabled={confirmBusy}
+                                onClick={runConfirmAction}
+                            >
+                                {confirmBusy ? <Loader2 className="spin" size={16} /> : null}
+                                {confirmModal.confirmLabel || 'Xác nhận'}
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            )}
         </div>
     );
 }
