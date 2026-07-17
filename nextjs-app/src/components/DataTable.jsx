@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Youtube, ArrowUp, Search, Filter, X, Plus, Languages } from 'lucide-react';
+import { Youtube, ArrowUp, Search, Filter, X, Plus, Languages, AlertTriangle } from 'lucide-react';
 import SearchCat from './SearchCat';
 
 
@@ -172,6 +172,7 @@ const DataTable = ({
 
     // Lightbox state
     const [selectedThumbnail, setSelectedThumbnail] = useState(null);
+    const [copyrightLink, setCopyrightLink] = useState(null);
 
     const extractMainStory = (summary) => {
         if (!summary || typeof summary !== 'string') return "";
@@ -884,6 +885,26 @@ const DataTable = ({
         setSelectedThumbnail(largeSrc);
     };
 
+    const isCopyrightChannel = (row) => {
+        return String(row?.['Channel Status'] || '').toLowerCase() === 'copyright';
+    };
+
+    const handleVideoLinkClick = (event, url, row) => {
+        if (!isCopyrightChannel(row)) return;
+        event.preventDefault();
+        setCopyrightLink({
+            url,
+            channelName: row?.['Channel Name'] || 'Kênh này',
+        });
+    };
+
+    const confirmCopyrightVisit = () => {
+        if (!copyrightLink?.url) return;
+        const opened = window.open(copyrightLink.url, '_blank', 'noopener,noreferrer');
+        if (opened) opened.opener = null;
+        setCopyrightLink(null);
+    };
+
     const renderCell = (header, value, row) => {
         const lowerHeader = header.toLowerCase();
 
@@ -930,8 +951,16 @@ const DataTable = ({
         }
 
         if (typeof value === 'string' && value.startsWith('http')) {
+            const isCopyright = isCopyrightChannel(row);
             return (
-                <a href={value} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <a
+                    href={value}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`video-link-button ${isCopyright ? 'copyright-warning' : ''}`}
+                    onClick={(event) => handleVideoLinkClick(event, value, row)}
+                    title={isCopyright ? 'Kênh này đang ở trạng thái bản quyền' : 'Mở video trên YouTube'}
+                >
                     <Youtube color="red" size={24} />
                 </a>
             );
@@ -1473,6 +1502,41 @@ const DataTable = ({
                                 onClick={() => setShowSuccessModal(false)}
                             >
                                 Đóng
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {copyrightLink && (
+                <div className="modal-overlay" onClick={() => setCopyrightLink(null)}>
+                    <div className="modal-container copyright-warning-modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header copyright-warning-header">
+                            <div className="copyright-warning-icon">
+                                <AlertTriangle size={26} />
+                            </div>
+                            <div>
+                                <h2>Cảnh báo bản quyền</h2>
+                                <p>
+                                    Kênh {copyrightLink.channelName} đang được đánh dấu bản quyền.
+                                    Bạn có chắc muốn truy cập video này không?
+                                </p>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button
+                                type="button"
+                                className="modal-btn-cancel"
+                                onClick={() => setCopyrightLink(null)}
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                type="button"
+                                className="modal-btn-confirm danger"
+                                onClick={confirmCopyrightVisit}
+                            >
+                                Truy cập
                             </button>
                         </div>
                     </div>

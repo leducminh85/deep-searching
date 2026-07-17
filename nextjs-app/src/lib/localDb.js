@@ -300,7 +300,24 @@ export async function queryVideos({
         const offsetParam = dataParams.length + 2;
 
         const dataSql = `
-            SELECT title, url, channel_name, views, date_published, thumbnail, created_at, summary, video_key, ${usedSelect}
+            SELECT
+                title,
+                url,
+                channel_name,
+                views,
+                date_published,
+                thumbnail,
+                created_at,
+                summary,
+                video_key,
+                COALESCE((
+                    SELECT cs.status
+                    FROM channel_sources cs
+                    WHERE lower(btrim(cs.channel_name)) = lower(btrim(videos.channel_name))
+                    ORDER BY CASE WHEN cs.status = 'copyright' THEN 0 ELSE 1 END
+                    LIMIT 1
+                ), 'normal') AS channel_status,
+                ${usedSelect}
             FROM videos
             ${dataWhereClause}
             ${orderClause}
@@ -320,6 +337,7 @@ export async function queryVideos({
                 'Thumbnail': r.thumbnail || '',
                 'Summary': r.summary || '',
                 'Video Key': r.video_key || '',
+                'Channel Status': r.channel_status || 'normal',
                 'Used': Boolean(r.is_used),
             };
         });
