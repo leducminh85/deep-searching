@@ -10,7 +10,7 @@ export async function GET() {
     try {
         return NextResponse.json({ channels: await listAdminChannels() });
     } catch (err) {
-        return NextResponse.json({ error: err.message || 'Khong the tai danh sach kenh' }, { status: 500 });
+        return NextResponse.json({ error: err.message || 'Không thể tải danh sách kênh' }, { status: 500 });
     }
 }
 
@@ -24,7 +24,7 @@ export async function POST(request) {
         const channelName = String(body.channel_name || body.channelName || channelUrl).trim();
 
         if (!channelUrl) {
-            return NextResponse.json({ error: 'Vui long nhap URL kenh YouTube' }, { status: 400 });
+            return NextResponse.json({ error: 'Vui lòng nhập URL kênh YouTube' }, { status: 400 });
         }
 
         const channel = await upsertAdminChannel({
@@ -37,9 +37,9 @@ export async function POST(request) {
 
         return NextResponse.json({
             channel,
-            message: 'Da them kenh va bat dau fetch video nen',
+            message: 'Đã thêm kênh và bắt đầu fetch video nền',
         }, { status: 202 });
     } catch (err) {
-        return NextResponse.json({ error: err.message || 'Khong the them kenh' }, { status: 500 });
+        return NextResponse.json({ error: err.message || 'Không thể thêm kênh' }, { status: 500 });
     }
 }

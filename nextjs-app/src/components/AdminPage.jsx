@@ -22,19 +22,19 @@ import {
 } from 'lucide-react';
 
 const STATUS_OPTIONS = [
-    { value: 'normal', label: 'Binh thuong' },
-    { value: 'copyright', label: 'Ban quyen' },
+    { value: 'normal', label: 'Bình thường' },
+    { value: 'copyright', label: 'Bản quyền' },
 ];
 
 function formatDate(value) {
-    if (!value) return 'Chua co';
+    if (!value) return 'Chưa có';
     try {
         return new Intl.DateTimeFormat('vi-VN', {
             dateStyle: 'short',
             timeStyle: 'short',
         }).format(new Date(value));
     } catch {
-        return 'Chua co';
+        return 'Chưa có';
     }
 }
 
@@ -54,14 +54,14 @@ function channelImage(channel) {
 function StatusIcon({ status, onClick }) {
     if (status === 'copyright') {
         return (
-            <button className="admin-status-icon copyright" onClick={onClick} title="Ban quyen - bam de doi">
+            <button className="admin-status-icon copyright" onClick={onClick} title="Bản quyền - bấm để đổi">
                 <Copyright size={18} />
             </button>
         );
     }
 
     return (
-        <button className="admin-status-icon normal" onClick={onClick} title="Binh thuong - bam de doi">
+        <button className="admin-status-icon normal" onClick={onClick} title="Bình thường - bấm để đổi">
             <BadgeCheck size={18} />
         </button>
     );
@@ -118,7 +118,7 @@ export default function AdminPage() {
                 return;
             }
             const payload = await response.json();
-            if (!response.ok) throw new Error(payload.error || 'Khong the tai danh sach kenh');
+            if (!response.ok) throw new Error(payload.error || 'Không thể tải danh sách kênh');
             setChannels(payload.channels || []);
             if (!selectedChannelId && payload.channels?.length) {
                 setSelectedChannelId(payload.channels[0].id);
@@ -136,7 +136,7 @@ export default function AdminPage() {
         try {
             const response = await fetch(`/api/admin/channels/${channelId}/videos?page=${page}&size=12`);
             const payload = await response.json();
-            if (!response.ok) throw new Error(payload.error || 'Khong the tai video');
+            if (!response.ok) throw new Error(payload.error || 'Không thể tải video');
             setVideosState({
                 loading: false,
                 videos: payload.videos || [],
@@ -192,7 +192,7 @@ export default function AdminPage() {
         });
         const payload = await response.json();
         if (!response.ok) {
-            setAuthError(payload.error || 'Mat khau khong dung');
+            setAuthError(payload.error || 'Mật khẩu không đúng');
             return;
         }
         setAuthenticated(true);
@@ -215,8 +215,8 @@ export default function AdminPage() {
                 }),
             });
             const payload = await response.json();
-            if (!response.ok) throw new Error(payload.error || 'Khong the them kenh');
-            setNotice(payload.message || 'Da them kenh');
+            if (!response.ok) throw new Error(payload.error || 'Không thể thêm kênh');
+            setNotice(payload.message || 'Đã thêm kênh');
             setChannelUrl('');
             setSelectedChannelId(payload.channel?.id || selectedChannelId);
             await loadChannels();
@@ -234,9 +234,9 @@ export default function AdminPage() {
         try {
             const response = await fetch('/api/admin/channels/import', { method: 'POST' });
             const payload = await response.json();
-            if (!response.ok) throw new Error(payload.error || 'Khong the import data.xlsx');
+            if (!response.ok) throw new Error(payload.error || 'Không thể import data.xlsx');
             setChannels(payload.channels || []);
-            setNotice(`Da import ${payload.imported || 0} kenh tu data.xlsx. Dang lay logo cho ${payload.metadata_jobs_started || 0} kenh thieu metadata.`);
+            setNotice(`Đã import ${payload.imported || 0} kênh từ data.xlsx. Đang lấy logo cho ${payload.metadata_jobs_started || 0} kênh thiếu metadata.`);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -259,7 +259,7 @@ export default function AdminPage() {
                 body: JSON.stringify(body),
             });
             const payload = await response.json();
-            if (!response.ok) throw new Error(payload.error || 'Khong the cap nhat kenh');
+            if (!response.ok) throw new Error(payload.error || 'Không thể cập nhật kênh');
             await loadChannels({ silent: true });
         } catch (err) {
             setChannels(previous);
@@ -273,8 +273,8 @@ export default function AdminPage() {
         try {
             const response = await fetch(`/api/admin/channels/${channel.id}`, { method: 'POST' });
             const payload = await response.json();
-            if (!response.ok) throw new Error(payload.error || 'Khong the sync kenh');
-            setNotice(payload.message || 'Da bat dau sync kenh');
+            if (!response.ok) throw new Error(payload.error || 'Không thể sync kênh');
+            setNotice(payload.message || 'Đã bắt đầu sync kênh');
             await loadChannels();
         } catch (err) {
             setError(err.message);
@@ -282,7 +282,7 @@ export default function AdminPage() {
     };
 
     const handleDeleteChannel = async (channel) => {
-        const confirmed = window.confirm(`Xoa kenh "${channel.channel_name}" va toan bo video thuoc kenh nay?`);
+        const confirmed = window.confirm(`Xóa kênh "${channel.channel_name}" và toàn bộ video thuộc kênh này?`);
         if (!confirmed) return;
 
         setNotice('');
@@ -290,8 +290,8 @@ export default function AdminPage() {
         try {
             const response = await fetch(`/api/admin/channels/${channel.id}`, { method: 'DELETE' });
             const payload = await response.json();
-            if (!response.ok) throw new Error(payload.error || 'Khong the xoa kenh');
-            setNotice(`Da xoa ${payload.deleted_videos || 0} video cua kenh ${channel.channel_name}`);
+            if (!response.ok) throw new Error(payload.error || 'Không thể xóa kênh');
+            setNotice(`Đã xóa ${payload.deleted_videos || 0} video của kênh ${channel.channel_name}`);
             setSelectedChannelId(null);
             setVideosState({ loading: false, videos: [], total: 0, page: 1 });
             await loadChannels();
@@ -314,19 +314,19 @@ export default function AdminPage() {
                 <section className="admin-login-panel">
                     <div className="admin-login-icon"><Lock size={24} /></div>
                     <h2>Admin Console</h2>
-                    <p>Nhap mat khau quan tri de truy cap kenh va du lieu video.</p>
+                    <p>Nhập mật khẩu quản trị để truy cập kênh và dữ liệu video.</p>
                     <form onSubmit={handleLogin} className="admin-login-form">
                         <input
                             type="password"
                             value={password}
                             onChange={(event) => setPassword(event.target.value)}
-                            placeholder="Mat khau admin"
+                            placeholder="Mật khẩu admin"
                             autoFocus
                         />
                         {authError && <div className="admin-alert danger"><AlertCircle size={16} />{authError}</div>}
                         <button className="admin-primary-btn" type="submit">
                             <ShieldCheck size={18} />
-                            Truy cap
+                            Truy cập
                         </button>
                     </form>
                 </section>
@@ -338,14 +338,14 @@ export default function AdminPage() {
         <div className="admin-console">
             <section className="admin-overview">
                 <div>
-                    <p className="admin-eyebrow">Channel Operations</p>
-                    <h2>Quan ly kenh</h2>
+                    <p className="admin-eyebrow">Vận hành kênh</p>
+                    <h2>Quản lý kênh</h2>
                 </div>
                 <div className="admin-metrics">
-                    <div><span>{totals.channels.toLocaleString('vi-VN')}</span><small>Kenh</small></div>
+                    <div><span>{totals.channels.toLocaleString('vi-VN')}</span><small>Kênh</small></div>
                     <div><span>{totals.videos.toLocaleString('vi-VN')}</span><small>Video DB</small></div>
-                    <div><span>{totals.copyright.toLocaleString('vi-VN')}</span><small>Ban quyen</small></div>
-                    <div><span>{totals.hidden.toLocaleString('vi-VN')}</span><small>Dang an</small></div>
+                    <div><span>{totals.copyright.toLocaleString('vi-VN')}</span><small>Bản quyền</small></div>
+                    <div><span>{totals.hidden.toLocaleString('vi-VN')}</span><small>Đang ẩn</small></div>
                 </div>
             </section>
 
@@ -364,7 +364,7 @@ export default function AdminPage() {
                     </select>
                     <button className="admin-primary-btn" disabled={savingChannel || !channelUrl.trim()}>
                         {savingChannel ? <Loader2 className="spin" size={18} /> : <Plus size={18} />}
-                        Them kenh
+                        Thêm kênh
                     </button>
                 </form>
                 <div className="admin-search">
@@ -372,7 +372,7 @@ export default function AdminPage() {
                     <input
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
-                        placeholder="Tim kenh, URL, status"
+                        placeholder="Tìm kênh, URL, trạng thái"
                     />
                 </div>
                 <button className="admin-secondary-btn" type="button" onClick={handleImportWorkbook} disabled={importingChannels}>
@@ -387,8 +387,8 @@ export default function AdminPage() {
             <div className="admin-grid">
             <section className="admin-panel">
                 <div className="admin-panel-header">
-                    <h3>Danh sach kenh</h3>
-                    <button className="admin-icon-btn" onClick={() => loadChannels()} title="Tai lai">
+                    <h3>Danh sách kênh</h3>
+                    <button className="admin-icon-btn" onClick={() => loadChannels()} title="Tải lại">
                         {loadingChannels ? <Loader2 className="spin" size={18} /> : <RefreshCcw size={18} />}
                     </button>
                 </div>
@@ -397,8 +397,8 @@ export default function AdminPage() {
                     <table className="admin-table">
                         <thead>
                             <tr>
-                                <th>Kenh</th>
-                                <th>Status</th>
+                                <th>Kênh</th>
+                                <th>Trạng thái</th>
                                 <th>Video</th>
                                 <th>URL</th>
                                 <th></th>
@@ -421,10 +421,7 @@ export default function AdminPage() {
                                                 <div>
                                                     <div className="admin-channel-name">{channel.channel_name}</div>
                                                     <div className="admin-channel-meta">
-                                                        ID: {channel.channel_id || 'chua co'}
-                                                    </div>
-                                                    <div className="admin-channel-meta">
-                                                        {channel.hidden ? 'An khoi web' : 'Dang hien thi'}
+                                                        ID: {channel.channel_id || 'chưa có'}
                                                     </div>
                                                 </div>
                                             </div>
@@ -442,7 +439,7 @@ export default function AdminPage() {
                                         <td>{Number(channel.video_count || 0).toLocaleString('vi-VN')}</td>
                                         <td>
                                             {channel.channel_url ? (
-                                                <a className="admin-youtube-link" href={channel.channel_url} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()} title="Mo kenh tren YouTube">
+                                                <a className="admin-youtube-link" href={channel.channel_url} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()} title="Mở kênh trên YouTube">
                                                     <ExternalLink size={17} />
                                                 </a>
                                             ) : (
@@ -457,7 +454,7 @@ export default function AdminPage() {
                                                         event.stopPropagation();
                                                         setOpenMenuId((current) => current === channel.id ? null : channel.id);
                                                     }}
-                                                    title="Thao tac"
+                                                    title="Thao tác"
                                                 >
                                                     <MoreVertical size={18} />
                                                 </button>
@@ -465,18 +462,18 @@ export default function AdminPage() {
                                                     <div className="admin-action-menu">
                                                         <button onClick={() => handleRefreshChannel(channel)}>
                                                             <RefreshCcw size={16} />
-                                                            Sync
+                                                            Đồng bộ
                                                         </button>
                                                         <button onClick={() => patchChannel(channel, { hidden: !channel.hidden }, { hidden: !channel.hidden })}>
                                                             {channel.hidden ? <Eye size={16} /> : <EyeOff size={16} />}
-                                                            {channel.hidden ? 'Hien tren web' : 'An khoi web'}
+                                                            {channel.hidden ? 'Hiện trên web' : 'Ẩn khỏi web'}
                                                         </button>
                                                         <button
                                                             className="danger"
                                                             onClick={() => handleDeleteChannel(channel)}
                                                         >
                                                             <Trash2 size={16} />
-                                                            Remove
+                                                            Xóa
                                                         </button>
                                                     </div>
                                                 )}
@@ -487,7 +484,7 @@ export default function AdminPage() {
                             })}
                             {!filteredChannels.length && (
                                 <tr>
-                                    <td colSpan="5" className="admin-empty">Khong co kenh phu hop</td>
+                                    <td colSpan="5" className="admin-empty">Không có kênh phù hợp</td>
                                 </tr>
                             )}
                         </tbody>
@@ -505,13 +502,13 @@ export default function AdminPage() {
                             </div>
                             <button className="admin-secondary-btn" onClick={() => loadVideos(selectedChannel.id, videosState.page)}>
                                 <RefreshCcw size={16} />
-                                Tai lai
+                                Tải lại
                             </button>
                         </div>
                         {videosState.loading ? (
                             <div className="admin-empty-state">
                                 <Loader2 className="spin" size={28} />
-                                <span>Dang tai video tu database</span>
+                                <span>Đang tải video từ database</span>
                             </div>
                         ) : (
                             <>
@@ -529,7 +526,7 @@ export default function AdminPage() {
                                     {!videosState.videos.length && (
                                         <div className="admin-empty-state">
                                             <Video size={28} />
-                                            <span>Kenh nay chua co video trong database</span>
+                                            <span>Kênh này chưa có video trong database</span>
                                         </div>
                                     )}
                                 </div>
@@ -540,7 +537,7 @@ export default function AdminPage() {
                                             disabled={videosState.page <= 1}
                                             onClick={() => loadVideos(selectedChannel.id, videosState.page - 1)}
                                         >
-                                            Truoc
+                                            Trước
                                         </button>
                                         <span>Trang {videosState.page}</span>
                                         <button
@@ -562,7 +559,7 @@ export default function AdminPage() {
                         </div>
                         <div className="admin-empty-state">
                             <Video size={28} />
-                            <span>Chon mot kenh de xem video co san trong database</span>
+                            <span>Chọn một kênh để xem video có sẵn trong database</span>
                         </div>
                     </>
                 )}

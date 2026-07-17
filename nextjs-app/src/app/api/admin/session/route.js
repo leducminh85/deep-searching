@@ -8,7 +8,7 @@ export async function GET() {
 export async function POST(request) {
     const body = await request.json().catch(() => ({}));
     if (!verifyAdminPassword(body.password)) {
-        return NextResponse.json({ error: 'Mat khau khong dung' }, { status: 401 });
+        return NextResponse.json({ error: 'Mật khẩu không đúng' }, { status: 401 });
     }
 
     return setAdminCookie(NextResponse.json({ authenticated: true }));
