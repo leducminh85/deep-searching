@@ -244,6 +244,29 @@ tr:last-child td {
   min-height: 70vh;
 }
 
+.admin-page {
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-page .header {
+  flex: 0 0 auto;
+  margin-bottom: 1rem;
+}
+
+.admin-page main {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+}
+
+.admin-page .admin-shell {
+  min-height: 0;
+  width: 100%;
+}
+
 .admin-centered {
   display: flex;
   align-items: center;
@@ -316,6 +339,14 @@ tr:last-child td {
 .admin-console {
   display: grid;
   gap: 1rem;
+}
+
+.admin-page .admin-console {
+  width: 100%;
+  height: 100%;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .admin-overview,
@@ -456,9 +487,21 @@ tr:last-child td {
   align-items: start;
 }
 
+.admin-page .admin-grid {
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+
 .admin-panel {
   min-width: 0;
   overflow: hidden;
+}
+
+.admin-page .admin-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .admin-panel-header {
@@ -479,7 +522,8 @@ tr:last-child td {
 
 .admin-table-wrap {
   overflow: auto;
-  max-height: 64vh;
+  min-height: 0;
+  flex: 1 1 auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(20, 184, 166, 0.72) rgba(15, 23, 42, 0.42);
 }
@@ -724,10 +768,23 @@ tr:last-child td {
 
 .admin-video-list {
   display: grid;
-  max-height: 64vh;
+  min-height: 0;
+  flex: 1 1 auto;
   overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(20, 184, 166, 0.72) rgba(15, 23, 42, 0.42);
+}
+
+.admin-video-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-video-body > .admin-empty-state {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .admin-table-wrap::-webkit-scrollbar,
@@ -795,6 +852,7 @@ tr:last-child td {
 
 .admin-pagination {
   padding: 0.85rem 1rem;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1081,7 +1139,6 @@ tr:last-child td {
 
 .admin-video-list.compact {
   grid-template-columns: 1fr;
-  max-height: 360px;
 }
 
 .admin-video-list.compact .admin-video-row {

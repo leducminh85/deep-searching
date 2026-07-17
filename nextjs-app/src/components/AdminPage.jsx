@@ -481,7 +481,7 @@ export default function AdminPage() {
         <div className="admin-console">
             <section className="admin-overview">
                 <div>
-                    <p className="admin-eyebrow">Vận hành kênh</p>
+                    <p className="admin-eyebrow">Admin</p>
                     <h2>Quản lý kênh</h2>
                 </div>
                 <div className="admin-metrics">
@@ -500,11 +500,11 @@ export default function AdminPage() {
                         onChange={(event) => setChannelUrl(event.target.value)}
                         placeholder="https://www.youtube.com/@channel"
                     />
-                    <select value={channelStatus} onChange={(event) => setChannelStatus(event.target.value)}>
+                    {/* <select value={channelStatus} onChange={(event) => setChannelStatus(event.target.value)}>
                         {STATUS_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
-                    </select>
+                    </select> */}
                     <button className="admin-primary-btn" disabled={savingChannel || !channelUrl.trim()}>
                         {savingChannel ? <Loader2 className="spin" size={18} /> : <Plus size={18} />}
                         Thêm kênh
@@ -518,10 +518,10 @@ export default function AdminPage() {
                         placeholder="Tìm kênh, URL, trạng thái"
                     />
                 </div>
-                <button className="admin-secondary-btn" type="button" onClick={handleImportWorkbook} disabled={importingChannels}>
+                {/* <button className="admin-secondary-btn" type="button" onClick={handleImportWorkbook} disabled={importingChannels}>
                     {importingChannels ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
                     Import XLSX
-                </button>
+                </button> */}
             </section>
 
             {toast && (
@@ -687,12 +687,14 @@ export default function AdminPage() {
                             </button>
                         </div>
                         {videosState.loading ? (
+                            <div className="admin-video-body">
                             <div className="admin-empty-state">
                                 <Loader2 className="spin" size={28} />
                                 <span>Đang tải video từ database</span>
                             </div>
+                            </div>
                         ) : (
-                            <>
+                            <div className="admin-video-body">
                                 <div className="admin-video-list compact">
                                     {videosState.videos.map((video) => (
                                         <a key={video.id} className="admin-video-row" href={video.url} target="_blank" rel="noopener noreferrer">
@@ -730,7 +732,7 @@ export default function AdminPage() {
                                         </button>
                                     </div>
                                 )}
-                            </>
+                            </div>
                         )}
                     </>
                 ) : (
@@ -738,9 +740,11 @@ export default function AdminPage() {
                         <div className="admin-panel-header">
                             <h3>Video trong DB</h3>
                         </div>
+                        <div className="admin-video-body">
                         <div className="admin-empty-state">
                             <Video size={28} />
                             <span>Chọn một kênh để xem video có sẵn trong database</span>
+                        </div>
                         </div>
                     </>
                 )}
