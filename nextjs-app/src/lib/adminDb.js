@@ -63,6 +63,11 @@ async function ensureAdminSchemaInternal() {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_channel_sources_source_url ON channel_sources(source_channel_url)`);
     await db.query(`
         UPDATE channel_sources
+        SET channel_name = btrim(channel_name)
+        WHERE channel_name <> btrim(channel_name)
+    `);
+    await db.query(`
+        UPDATE channel_sources
         SET source_channel_url = channel_url
         WHERE source_channel_url IS NULL
           AND channel_url ~* 'youtube\\.com|youtu\\.be'
@@ -82,7 +87,7 @@ async function ensureAdminSchemaInternal() {
                        (cs_inner.channel_thumbnail IS NOT NULL AND cs_inner.channel_thumbnail <> '') AS has_thumbnail,
                        COUNT(v.id) AS video_count
                 FROM channel_sources cs_inner
-                LEFT JOIN videos v ON lower(v.channel_name) = lower(cs_inner.channel_name)
+                LEFT JOIN videos v ON lower(btrim(v.channel_name)) = lower(btrim(cs_inner.channel_name))
                 WHERE cs_inner.source_channel_url IS NOT NULL
                 GROUP BY cs_inner.id
             ) ranked
@@ -100,7 +105,7 @@ async function ensureAdminSchemaInternal() {
         WHERE sourced.source_channel_url IS NOT NULL
           AND old.source_channel_url IS NULL
           AND sourced.id <> old.id
-          AND lower(sourced.channel_name) = lower(old.channel_name)
+          AND lower(btrim(sourced.channel_name)) = lower(btrim(old.channel_name))
     `);
     await db.query(`
         DELETE FROM channel_sources old
@@ -108,16 +113,16 @@ async function ensureAdminSchemaInternal() {
         WHERE sourced.source_channel_url IS NOT NULL
           AND old.source_channel_url IS NULL
           AND sourced.id <> old.id
-          AND lower(sourced.channel_name) = lower(old.channel_name)
+          AND lower(btrim(sourced.channel_name)) = lower(btrim(old.channel_name))
     `);
 
     await db.query(`
         INSERT INTO channel_sources (channel_name, status, sync_status, analysis_status)
-        SELECT DISTINCT v.channel_name, 'normal', 'idle', 'idle'
+        SELECT DISTINCT btrim(v.channel_name), 'normal', 'idle', 'idle'
         FROM videos v
-        LEFT JOIN channel_sources cs ON lower(cs.channel_name) = lower(v.channel_name)
+        LEFT JOIN channel_sources cs ON lower(btrim(cs.channel_name)) = lower(btrim(v.channel_name))
         WHERE v.channel_name IS NOT NULL
-          AND v.channel_name <> ''
+          AND btrim(v.channel_name) <> ''
           AND cs.id IS NULL
         ON CONFLICT DO NOTHING
     `);
@@ -194,7 +199,7 @@ export async function syncWorkbookChannels() {
                 source_channel_url = COALESCE(channel_sources.source_channel_url, $2),
                 updated_at = CASE WHEN channel_sources.channel_url IS NULL THEN NOW() ELSE channel_sources.updated_at END
             WHERE lower(source_channel_url) = lower($2)
-               OR lower(channel_name) = lower($1)
+               OR lower(btrim(channel_name)) = lower(btrim($1))
                OR lower(channel_url) = lower($2)
             RETURNING id
         `, [fallbackName, channel.channelUrl]);
@@ -234,7 +239,7 @@ export async function listAdminChannels() {
             COUNT(v.id)::INT AS video_count,
             COUNT(v.id) FILTER (WHERE NULLIF(v.summary, '') IS NULL)::INT AS pending_analysis_count
         FROM channel_sources cs
-        LEFT JOIN videos v ON lower(v.channel_name) = lower(cs.channel_name)
+        LEFT JOIN videos v ON lower(btrim(v.channel_name)) = lower(btrim(cs.channel_name))
         GROUP BY cs.id
         ORDER BY cs.updated_at DESC, cs.channel_name ASC
     `);
@@ -252,6 +257,7 @@ export async function upsertAdminChannel({ channelId = null, channelName, channe
     await ensureAdminSchema();
     const db = getPool();
     const normalizedStatus = normalizeChannelStatus(status);
+    const normalizedName = String(channelName || channelUrl || '').trim();
     const result = await db.query(`
         INSERT INTO channel_sources (channel_id, channel_name, channel_url, source_channel_url, channel_thumbnail, status, sync_status, analysis_status, updated_at)
         VALUES ($1, $2, $3, $3, $4, $5, 'queued', 'pending', NOW())
@@ -267,7 +273,7 @@ export async function upsertAdminChannel({ channelId = null, channelName, channe
             last_error = NULL,
             updated_at = NOW()
         RETURNING *
-    `, [channelId, channelName, channelUrl, channelThumbnail, normalizedStatus]);
+    `, [channelId, normalizedName, channelUrl, channelThumbnail, normalizedStatus]);
 
     if (result.rows[0]) return result.rows[0];
 
@@ -275,7 +281,7 @@ export async function upsertAdminChannel({ channelId = null, channelName, channe
         INSERT INTO channel_sources (channel_name, channel_url, source_channel_url, channel_thumbnail, status, sync_status, analysis_status, updated_at)
         VALUES ($1, $2, $2, $3, $4, 'queued', 'pending', NOW())
         RETURNING *
-    `, [channelName, channelUrl, channelThumbnail, normalizedStatus]);
+    `, [normalizedName, channelUrl, channelThumbnail, normalizedStatus]);
     return fallback.rows[0];
 }
 
@@ -303,6 +309,28 @@ export async function updateAdminChannelVisibility(id, hidden) {
     return result.rows[0] || null;
 }
 
+export async function updateAdminChannelUrl(id, channelUrl) {
+    await ensureAdminSchema();
+    const db = getPool();
+    const normalizedUrl = String(channelUrl || '').trim();
+    if (!normalizedUrl) return null;
+
+    const result = await db.query(`
+        UPDATE channel_sources
+        SET
+            channel_url = $2,
+            source_channel_url = $2,
+            channel_id = NULL,
+            channel_thumbnail = NULL,
+            sync_status = 'queued',
+            last_error = NULL,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+    `, [id, normalizedUrl]);
+    return result.rows[0] || null;
+}
+
 export async function markChannelSyncState(id, fields) {
     await ensureAdminSchema();
     const db = getPool();
@@ -313,7 +341,7 @@ export async function markChannelSyncState(id, fields) {
         if (!['channel_id', 'channel_name', 'channel_url', 'channel_thumbnail', 'sync_status', 'analysis_status', 'last_sync_at', 'last_analysis_at', 'last_error'].includes(key)) {
             continue;
         }
-        params.push(value);
+        params.push(key === 'channel_name' ? String(value || '').trim() : value);
         updates.push(`${key} = $${params.length}`);
     }
 
@@ -427,13 +455,13 @@ export async function deleteChannelAndVideos(id) {
         await client.query(`
             DELETE FROM profile_used_videos pu
             USING videos v
-            WHERE lower(v.channel_name) = lower($1)
+            WHERE lower(btrim(v.channel_name)) = lower(btrim($1))
               AND (pu.url = v.url OR pu.video_key = v.video_key)
         `, [channel.channel_name]);
 
         const deletedVideos = await client.query(`
             DELETE FROM videos
-            WHERE lower(channel_name) = lower($1)
+            WHERE lower(btrim(channel_name)) = lower(btrim($1))
         `, [channel.channel_name]);
 
         await client.query(`DELETE FROM channel_sources WHERE id = $1`, [id]);
@@ -464,13 +492,13 @@ export async function listChannelVideos(channelId, { page = 1, size = 25 } = {})
     const countResult = await db.query(`
         SELECT COUNT(*)::INT AS total
         FROM videos
-        WHERE lower(channel_name) = lower($1)
+        WHERE lower(btrim(channel_name)) = lower(btrim($1))
     `, [channel.channel_name]);
 
     const videoResult = await db.query(`
         SELECT id, title, url, views, date_published, thumbnail, summary, video_key, created_at
         FROM videos
-        WHERE lower(channel_name) = lower($1)
+        WHERE lower(btrim(channel_name)) = lower(btrim($1))
         ORDER BY date_published DESC NULLS LAST, created_at DESC
         LIMIT $2 OFFSET $3
     `, [channel.channel_name, pageSize, offset]);
