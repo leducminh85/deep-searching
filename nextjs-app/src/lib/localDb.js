@@ -106,6 +106,28 @@ export async function ensureUsageSchema() {
             await db.query(`CREATE INDEX IF NOT EXISTS idx_profile_used_videos_url ON profile_used_videos(url)`);
             await db.query(`CREATE INDEX IF NOT EXISTS idx_profile_doc_syncs_profile_id ON profile_doc_syncs(profile_id)`);
             await db.query(`CREATE INDEX IF NOT EXISTS idx_profile_doc_syncs_doc_id ON profile_doc_syncs(doc_id)`);
+
+            await db.query(`
+                CREATE TABLE IF NOT EXISTS channel_sources (
+                    id BIGSERIAL PRIMARY KEY,
+                    channel_id TEXT UNIQUE,
+                    channel_name TEXT NOT NULL,
+                    channel_url TEXT,
+                    channel_thumbnail TEXT,
+                    status TEXT NOT NULL DEFAULT 'normal',
+                    hidden BOOLEAN NOT NULL DEFAULT FALSE,
+                    sync_status TEXT NOT NULL DEFAULT 'idle',
+                    analysis_status TEXT NOT NULL DEFAULT 'idle',
+                    last_sync_at TIMESTAMPTZ,
+                    last_analysis_at TIMESTAMPTZ,
+                    last_error TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            `);
+            await db.query(`ALTER TABLE channel_sources ADD COLUMN IF NOT EXISTS channel_thumbnail TEXT`);
+            await db.query(`ALTER TABLE channel_sources ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE`);
+            await db.query(`CREATE INDEX IF NOT EXISTS idx_channel_sources_hidden ON channel_sources(hidden)`);
         })().catch((err) => {
             usageSchemaPromise = null;
             throw err;
@@ -183,6 +205,14 @@ export async function queryVideos({
     const conditions = [];
     const params = [];
     let paramIndex = 1;
+    conditions.push(`
+        NOT EXISTS (
+            SELECT 1
+            FROM channel_sources cs
+            WHERE cs.hidden IS TRUE
+              AND lower(cs.channel_name) = lower(videos.channel_name)
+        )
+    `);
 
     // Full-Text Search
     if (query && query.trim()) {
@@ -305,10 +335,21 @@ export async function queryVideos({
  * Get unique channel names from the local videos table.
  */
 export async function getChannels() {
+    await ensureUsageSchema();
     const db = getPool();
     try {
         const result = await db.query(
-            `SELECT DISTINCT channel_name FROM videos WHERE channel_name IS NOT NULL AND channel_name != '' ORDER BY channel_name`
+            `SELECT DISTINCT v.channel_name
+             FROM videos v
+             WHERE v.channel_name IS NOT NULL
+               AND v.channel_name != ''
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM channel_sources cs
+                   WHERE cs.hidden IS TRUE
+                     AND lower(cs.channel_name) = lower(v.channel_name)
+               )
+             ORDER BY v.channel_name`
         );
         return result.rows.map(r => r.channel_name);
     } catch (e) {

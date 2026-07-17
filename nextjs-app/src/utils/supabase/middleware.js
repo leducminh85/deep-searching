@@ -38,8 +38,10 @@ export async function updateSession(request) {
   if (
     !user &&
     !request.nextUrl.pathname.startsWith('/login') &&
+    !request.nextUrl.pathname.startsWith('/admin') &&
     !request.nextUrl.pathname.startsWith('/auth') &&
-    !request.nextUrl.pathname.startsWith('/api/auth')
+    !request.nextUrl.pathname.startsWith('/api/auth') &&
+    !request.nextUrl.pathname.startsWith('/api/admin')
   ) {
     // If it's an API request, return 401 instead of redirecting to login HTML
     if (request.nextUrl.pathname.startsWith('/api/')) {

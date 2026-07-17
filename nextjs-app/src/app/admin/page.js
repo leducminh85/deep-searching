@@ -25,10 +25,9 @@ export default function AdminPageRoute() {
 
   const handleLogout = async () => {
     try {
-      const res = await fetch('/api/auth/logout', { method: 'POST' });
-      if (res.ok) {
-        window.location.href = '/login';
-      }
+      await fetch('/api/admin/session', { method: 'DELETE' });
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/admin';
     } catch (err) {
       console.error('Logout error:', err);
     }
