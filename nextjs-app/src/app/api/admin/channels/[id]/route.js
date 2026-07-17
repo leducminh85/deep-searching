@@ -21,12 +21,12 @@ export async function PATCH(request, { params }) {
         }
 
         if (!channel) {
-            return NextResponse.json({ error: 'Khong tim thay kenh' }, { status: 404 });
+            return NextResponse.json({ error: 'Không tìm thấy kênh' }, { status: 404 });
         }
 
         return NextResponse.json({ channel });
     } catch (err) {
-        return NextResponse.json({ error: err.message || 'Khong the cap nhat kenh' }, { status: 500 });
+        return NextResponse.json({ error: err.message || 'Không thể cập nhật kênh' }, { status: 500 });
     }
 }
 
@@ -39,16 +39,16 @@ export async function POST(request, { params }) {
         const channel = await getAdminChannel(id);
 
         if (!channel) {
-            return NextResponse.json({ error: 'Khong tim thay kenh' }, { status: 404 });
+            return NextResponse.json({ error: 'Không tìm thấy kênh' }, { status: 404 });
         }
 
         const started = startChannelSync(channel, channel.channel_url);
         return NextResponse.json({
             channel,
-            message: started ? 'Da bat dau fetch lai kenh' : 'Kenh nay dang duoc fetch',
+            message: started ? 'Đã bắt đầu fetch lại kênh' : 'Kênh này đang được fetch',
         }, { status: started ? 202 : 200 });
     } catch (err) {
-        return NextResponse.json({ error: err.message || 'Khong the fetch kenh' }, { status: 500 });
+        return NextResponse.json({ error: err.message || 'Không thể fetch kênh' }, { status: 500 });
     }
 }
 
@@ -61,7 +61,7 @@ export async function DELETE(request, { params }) {
         const result = await deleteChannelAndVideos(id);
 
         if (!result) {
-            return NextResponse.json({ error: 'Khong tim thay kenh' }, { status: 404 });
+            return NextResponse.json({ error: 'Không tìm thấy kênh' }, { status: 404 });
         }
 
         return NextResponse.json({
@@ -69,6 +69,6 @@ export async function DELETE(request, { params }) {
             deleted_videos: result.deletedVideos,
         });
     } catch (err) {
-        return NextResponse.json({ error: err.message || 'Khong the xoa kenh' }, { status: 500 });
+        return NextResponse.json({ error: err.message || 'Không thể xóa kênh' }, { status: 500 });
     }
 }

@@ -15,11 +15,11 @@ export async function GET(request, { params }) {
         });
 
         if (!result) {
-            return NextResponse.json({ error: 'Khong tim thay kenh' }, { status: 404 });
+            return NextResponse.json({ error: 'Không tìm thấy kênh' }, { status: 404 });
         }
 
         return NextResponse.json(result);
     } catch (err) {
-        return NextResponse.json({ error: err.message || 'Khong the tai video' }, { status: 500 });
+        return NextResponse.json({ error: err.message || 'Không thể tải video' }, { status: 500 });
     }
 }

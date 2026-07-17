@@ -18,6 +18,6 @@ export async function POST() {
             channels,
         });
     } catch (err) {
-        return NextResponse.json({ error: err.message || 'Khong the import kenh tu data.xlsx' }, { status: 500 });
+        return NextResponse.json({ error: err.message || 'Không thể import kênh từ data.xlsx' }, { status: 500 });
     }
 }

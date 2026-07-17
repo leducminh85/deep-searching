@@ -320,12 +320,53 @@ export async function markChannelSyncState(id, fields) {
     if (!updates.length) return getAdminChannel(id);
     updates.push('updated_at = NOW()');
 
-    const result = await db.query(`
+    const updateSql = `
         UPDATE channel_sources
         SET ${updates.join(', ')}
         WHERE id = $1
         RETURNING *
-    `, params);
+    `;
+
+    if (fields.channel_id) {
+        const client = await db.connect();
+        try {
+            await client.query('BEGIN');
+            const duplicate = await client.query(`
+                SELECT id
+                FROM channel_sources
+                WHERE lower(channel_id) = lower($1)
+                  AND id <> $2
+                LIMIT 1
+                FOR UPDATE
+            `, [fields.channel_id, id]);
+
+            if (duplicate.rows[0]) {
+                await client.query(`
+                    UPDATE channel_sources target
+                    SET
+                        status = CASE WHEN duplicate.status = 'copyright' THEN 'copyright' ELSE target.status END,
+                        hidden = target.hidden OR duplicate.hidden,
+                        source_channel_url = COALESCE(target.source_channel_url, duplicate.source_channel_url),
+                        created_at = LEAST(target.created_at, duplicate.created_at)
+                    FROM channel_sources duplicate
+                    WHERE target.id = $1
+                      AND duplicate.id = $2
+                `, [id, duplicate.rows[0].id]);
+                await client.query(`DELETE FROM channel_sources WHERE id = $1`, [duplicate.rows[0].id]);
+            }
+
+            const result = await client.query(updateSql, params);
+            await client.query('COMMIT');
+            return result.rows[0] || null;
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+    }
+
+    const result = await db.query(updateSql, params);
     return result.rows[0] || null;
 }
 

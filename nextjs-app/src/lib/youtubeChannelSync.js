@@ -33,6 +33,16 @@ function extractChannelRef(rawUrl) {
     return { query: value };
 }
 
+function normalizeHandle(value) {
+    const cleaned = String(value || '').trim();
+    if (!cleaned) return '';
+    const withoutUrl = cleaned
+        .replace(/^https?:\/\/(www\.)?youtube\.com\//i, '')
+        .replace(/^@?/, '');
+    const handle = withoutUrl.split(/[/?#]/)[0];
+    return handle ? `@${handle}` : '';
+}
+
 async function youtubeGet(path, params = {}) {
     const apiKey = getApiKey();
     if (!apiKey) {
@@ -98,13 +108,15 @@ async function resolveChannel(rawUrl) {
 
     const channel = payload?.items?.[0];
     if (!channel) {
-        throw new Error('Khong tim thay kenh YouTube tu URL nay');
+        throw new Error('Không tìm thấy kênh YouTube từ URL này');
     }
 
+    const channelHandle = normalizeHandle(channel.snippet?.customUrl) || ref.handle || '';
+
     return {
-        channelId: channel.id,
+        channelId: channelHandle || `@${channel.id}`,
         channelName: channel.snippet?.title || channel.id,
-        channelUrl: `https://www.youtube.com/channel/${channel.id}`,
+        channelUrl: channelHandle ? `https://www.youtube.com/${channelHandle}` : `https://www.youtube.com/channel/${channel.id}`,
         channelThumbnail: channel.snippet?.thumbnails?.high?.url || channel.snippet?.thumbnails?.medium?.url || channel.snippet?.thumbnails?.default?.url || '',
         uploadsPlaylistId: channel.contentDetails?.relatedPlaylists?.uploads,
     };
@@ -130,7 +142,9 @@ async function runChannelMetadataSync(channelRow) {
 }
 
 export function startChannelMetadataSync(channelRow) {
-    if (!channelRow?.channel_url || channelRow.channel_thumbnail) return false;
+    const hasHandle = String(channelRow?.channel_id || '').startsWith('@');
+    const hasName = channelRow?.channel_name && !/^https?:\/\//i.test(channelRow.channel_name);
+    if (!channelRow?.channel_url || (channelRow.channel_thumbnail && hasHandle && hasName)) return false;
     const key = String(channelRow.id);
     if (runningMetadataJobs.has(key)) return false;
 
@@ -210,7 +224,7 @@ async function runChannelSync(channelRow, rawUrl) {
     try {
         const resolved = await resolveChannel(rawUrl || channelRow.channel_url);
         if (!resolved.uploadsPlaylistId) {
-            throw new Error('Khong tim thay uploads playlist cua kenh');
+            throw new Error('Không tìm thấy uploads playlist của kênh');
         }
 
         await markChannelSyncState(channelRow.id, {
