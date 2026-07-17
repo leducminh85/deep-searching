@@ -564,7 +564,7 @@ export default function AdminPage() {
                                                 <div>
                                                     <div className="admin-channel-name">{channel.channel_name}</div>
                                                     <div className="admin-channel-meta">
-                                                        ID: {channel.channel_id || 'chưa có'}
+                                                        {channel.channel_id || 'chưa có'}
                                                     </div>
                                                 </div>
                                             </div>
