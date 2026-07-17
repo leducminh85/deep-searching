@@ -14,8 +14,36 @@ import { getVideoKey } from '../src/lib/videoUrl.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Fallback DATABASE_URL matching current project setup
-const DATABASE_URL = process.env.LOCAL_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/deep_searching';
+loadEnvFiles([
+    path.resolve(__dirname, '..', '..', '.env'),
+    path.resolve(__dirname, '..', '.env.local'),
+]);
+
+function loadEnvFiles(files) {
+    for (const file of files) {
+        if (fs.existsSync(file)) {
+            process.loadEnvFile(file);
+        }
+    }
+}
+
+function getDatabaseUrl() {
+    if (process.env.LOCAL_DATABASE_URL) return process.env.LOCAL_DATABASE_URL;
+    if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+
+    const password = process.env.POSTGRES_PASSWORD;
+    if (!password) {
+        throw new Error('Missing database config. Set LOCAL_DATABASE_URL, DATABASE_URL, or POSTGRES_PASSWORD in .env.');
+    }
+
+    const user = process.env.POSTGRES_USER || 'postgres';
+    const host = process.env.POSTGRES_HOST || 'localhost';
+    const port = process.env.POSTGRES_PORT || '5432';
+    const db = process.env.POSTGRES_DB || 'deep_searching';
+    return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${db}`;
+}
+
+const DATABASE_URL = getDatabaseUrl();
 const DATA_FILE = path.resolve(__dirname, '../../data.xlsx');
 const SHEET_NAME = 'NEW_CACHE_DATA_HIDDEN_';
 const BATCH_SIZE = 100;
