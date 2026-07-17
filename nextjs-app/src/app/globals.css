@@ -480,6 +480,8 @@ tr:last-child td {
 .admin-table-wrap {
   overflow: auto;
   max-height: 64vh;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(20, 184, 166, 0.72) rgba(15, 23, 42, 0.42);
 }
 
 .admin-table {
@@ -489,6 +491,37 @@ tr:last-child td {
 .admin-table th {
   top: 0;
   padding: 0.85rem 1rem;
+}
+
+.admin-sort-header {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.admin-sort-header svg {
+  color: var(--text-muted);
+  opacity: 0.72;
+}
+
+.admin-sort-header:hover,
+.admin-sort-header.active {
+  color: #5eead4;
+}
+
+.admin-sort-header:hover svg,
+.admin-sort-header.active svg {
+  color: #5eead4;
+  opacity: 1;
 }
 
 .admin-table td {
@@ -616,6 +649,32 @@ tr:last-child td {
   display: grid;
   max-height: 64vh;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(20, 184, 166, 0.72) rgba(15, 23, 42, 0.42);
+}
+
+.admin-table-wrap::-webkit-scrollbar,
+.admin-video-list::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.admin-table-wrap::-webkit-scrollbar-track,
+.admin-video-list::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.42);
+  border-radius: 999px;
+}
+
+.admin-table-wrap::-webkit-scrollbar-thumb,
+.admin-video-list::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(15, 23, 42, 0.42);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(20, 184, 166, 0.95), rgba(99, 102, 241, 0.8));
+}
+
+.admin-table-wrap::-webkit-scrollbar-thumb:hover,
+.admin-video-list::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(45, 212, 191, 1), rgba(129, 140, 248, 0.95));
 }
 
 .admin-video-row {

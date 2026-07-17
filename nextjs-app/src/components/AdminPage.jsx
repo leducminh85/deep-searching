@@ -3,8 +3,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     AlertCircle,
+    ArrowUpDown,
     BadgeCheck,
     CheckCircle2,
+    ChevronDown,
+    ChevronUp,
     Copyright,
     ExternalLink,
     Eye,
@@ -26,6 +29,11 @@ const STATUS_OPTIONS = [
     { value: 'normal', label: 'Bình thường' },
     { value: 'copyright', label: 'Bản quyền' },
 ];
+
+const STATUS_RANK = {
+    normal: 0,
+    copyright: 1,
+};
 
 function formatDate(value) {
     if (!value) return 'Chưa có';
@@ -83,6 +91,7 @@ export default function AdminPage() {
     const [error, setError] = useState('');
     const [query, setQuery] = useState('');
     const [selectedChannelId, setSelectedChannelId] = useState(null);
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
     const [openMenuId, setOpenMenuId] = useState(null);
     const [menuPosition, setMenuPosition] = useState(null);
     const [editingChannel, setEditingChannel] = useState(null);
@@ -106,6 +115,36 @@ export default function AdminPage() {
             || channel.status?.toLowerCase().includes(keyword)
         ));
     }, [channels, query]);
+
+    const sortedChannels = useMemo(() => {
+        if (!sortConfig.key) return filteredChannels;
+
+        const direction = sortConfig.direction === 'desc' ? -1 : 1;
+        return [...filteredChannels].sort((left, right) => {
+            if (sortConfig.key === 'name') {
+                return direction * String(left.channel_name || '').localeCompare(
+                    String(right.channel_name || ''),
+                    'vi',
+                    { sensitivity: 'base' }
+                );
+            }
+
+            if (sortConfig.key === 'status') {
+                const leftRank = STATUS_RANK[left.status] ?? 99;
+                const rightRank = STATUS_RANK[right.status] ?? 99;
+                if (leftRank !== rightRank) return direction * (leftRank - rightRank);
+                return direction * String(left.channel_name || '').localeCompare(String(right.channel_name || ''), 'vi', { sensitivity: 'base' });
+            }
+
+            if (sortConfig.key === 'videos') {
+                const videoDiff = Number(left.video_count || 0) - Number(right.video_count || 0);
+                if (videoDiff !== 0) return direction * videoDiff;
+                return String(left.channel_name || '').localeCompare(String(right.channel_name || ''), 'vi', { sensitivity: 'base' });
+            }
+
+            return 0;
+        });
+    }, [filteredChannels, sortConfig]);
 
     const totals = useMemo(() => channels.reduce((acc, channel) => {
         acc.channels += 1;
@@ -211,6 +250,20 @@ export default function AdminPage() {
         setMenuPosition(null);
         setEditingChannel(channel);
         setEditChannelUrl(channel.channel_url || channel.source_channel_url || '');
+    };
+
+    const handleSort = (key) => {
+        setSortConfig((current) => {
+            if (current.key === key) {
+                return { key, direction: current.direction === 'asc' ? 'desc' : 'asc' };
+            }
+            return { key, direction: key === 'videos' ? 'desc' : 'asc' };
+        });
+    };
+
+    const sortIcon = (key) => {
+        if (sortConfig.key !== key) return <ArrowUpDown size={14} />;
+        return sortConfig.direction === 'asc' ? <ChevronUp size={15} /> : <ChevronDown size={15} />;
     };
 
     const handleLogin = async (event) => {
@@ -472,15 +525,30 @@ export default function AdminPage() {
                     <table className="admin-table">
                         <thead>
                             <tr>
-                                <th>Kênh</th>
-                                <th>Trạng thái</th>
-                                <th>Video</th>
+                                <th>
+                                    <button className={`admin-sort-header ${sortConfig.key === 'name' ? 'active' : ''}`} type="button" onClick={() => handleSort('name')}>
+                                        Kênh
+                                        {sortIcon('name')}
+                                    </button>
+                                </th>
+                                <th>
+                                    <button className={`admin-sort-header ${sortConfig.key === 'status' ? 'active' : ''}`} type="button" onClick={() => handleSort('status')}>
+                                        Trạng thái
+                                        {sortIcon('status')}
+                                    </button>
+                                </th>
+                                <th>
+                                    <button className={`admin-sort-header ${sortConfig.key === 'videos' ? 'active' : ''}`} type="button" onClick={() => handleSort('videos')}>
+                                        Video
+                                        {sortIcon('videos')}
+                                    </button>
+                                </th>
                                 <th>URL</th>
                                 <th></th>
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredChannels.map((channel) => {
+                            {sortedChannels.map((channel) => {
                                 const avatar = channelImage(channel);
                                 return (
                                     <tr
@@ -534,7 +602,7 @@ export default function AdminPage() {
                                                     <div className="admin-action-menu" style={menuPosition || undefined}>
                                                         <button type="button" onClick={() => openEditChannel(channel)}>
                                                             <Pencil size={16} />
-                                                            Sửa URL
+                                                            Sửa
                                                         </button>
                                                         <button type="button" onClick={() => handleRefreshChannel(channel)}>
                                                             <RefreshCcw size={16} />
@@ -566,7 +634,7 @@ export default function AdminPage() {
                                     </tr>
                                 );
                             })}
-                            {!filteredChannels.length && (
+                            {!sortedChannels.length && (
                                 <tr>
                                     <td colSpan="5" className="admin-empty">Không có kênh phù hợp</td>
                                 </tr>
