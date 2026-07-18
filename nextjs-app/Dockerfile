@@ -31,6 +31,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+RUN apk add --no-cache python3 py3-pip \
+    && python3 -m pip install --break-system-packages --no-cache-dir yt-dlp ollama requests
+
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 

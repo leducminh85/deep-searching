@@ -214,7 +214,9 @@ async function fetchPlaylistVideos(playlistId, channelName) {
     return videos;
 }
 
-async function runChannelSync(channelRow, rawUrl) {
+export async function syncChannelVideos(channelRow, rawUrl, options = {}) {
+    const minDurationSeconds = Number(options.minDurationSeconds || 0);
+
     await markChannelSyncState(channelRow.id, {
         sync_status: 'running',
         analysis_status: 'pending',
@@ -234,21 +236,42 @@ async function runChannelSync(channelRow, rawUrl) {
             channel_thumbnail: resolved.channelThumbnail,
         });
 
-        const videos = await fetchPlaylistVideos(resolved.uploadsPlaylistId, resolved.channelName);
+        const fetchedVideos = await fetchPlaylistVideos(resolved.uploadsPlaylistId, resolved.channelName);
+        const videos = minDurationSeconds > 0
+            ? fetchedVideos.filter((video) => !video.durationSeconds || video.durationSeconds > minDurationSeconds)
+            : fetchedVideos;
+        const skippedShorts = fetchedVideos.length - videos.length;
         const result = await insertOrUpdateVideos(videos);
 
         await markChannelSyncState(channelRow.id, {
             sync_status: 'completed',
             analysis_status: 'pending',
             last_sync_at: new Date(),
-            last_error: `Fetched ${videos.length} videos (${result.added} new, ${result.updated} updated). Analysis is pending for videos without summaries.`,
+            last_error: `Fetched ${videos.length} videos (${result.added} new, ${result.updated} updated${skippedShorts ? `, skipped ${skippedShorts} shorts` : ''}). Analysis is pending for videos without summaries.`,
         });
+
+        return {
+            channel: resolved,
+            fetched: fetchedVideos.length,
+            imported: videos.length,
+            skippedShorts,
+            ...result,
+        };
     } catch (err) {
         await markChannelSyncState(channelRow.id, {
             sync_status: 'failed',
             analysis_status: 'failed',
             last_error: err.message || 'Channel sync failed',
         });
+        throw err;
+    }
+}
+
+async function runChannelSync(channelRow, rawUrl) {
+    try {
+        await syncChannelVideos(channelRow, rawUrl);
+    } catch {
+        // syncChannelVideos already recorded channel failure state.
     } finally {
         runningJobs.delete(String(channelRow.id));
     }

@@ -694,11 +694,11 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                     >
-                                                        {occurrence.docTitle || 'Google Doc'} Â· {occurrence.sheetTab || 'Sheet'}!{occurrence.cell || '?'}
+                                                        {occurrence.docTitle || 'Google Doc'} · {occurrence.sheetTab || 'Sheet'}!{occurrence.cell || '?'}
                                                     </a>
                                                 ))}
                                                 {(video.occurrences || []).length > 3 && (
-                                                    <span>+{video.occurrences.length - 3} nguá»“n khÃ¡c</span>
+                                                    <span>+{video.occurrences.length - 3} nguồn khác</span>
                                                 )}
                                             </div>
                                         </div>

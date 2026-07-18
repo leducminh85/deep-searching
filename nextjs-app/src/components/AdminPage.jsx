@@ -17,9 +17,11 @@ import {
     MoreVertical,
     Pencil,
     Plus,
+    PlayCircle,
     RefreshCcw,
     Search,
     ShieldCheck,
+    Terminal,
     Trash2,
     Video,
     Youtube,
@@ -100,6 +102,9 @@ export default function AdminPage() {
     const [confirmModal, setConfirmModal] = useState(null);
     const [confirmBusy, setConfirmBusy] = useState(false);
     const [videosState, setVideosState] = useState({ loading: false, videos: [], total: 0, page: 1 });
+    const [dailyStatus, setDailyStatus] = useState(null);
+    const [startingDailyUpdate, setStartingDailyUpdate] = useState(false);
+    const [dailyLogOpen, setDailyLogOpen] = useState(false);
 
     const toast = error
         ? { type: 'danger', icon: <AlertCircle size={18} />, message: error }
@@ -227,6 +232,27 @@ export default function AdminPage() {
         const timer = window.setInterval(() => loadChannels({ silent: true }), 8000);
         return () => window.clearInterval(timer);
     }, [authenticated, selectedChannelId]);
+
+    const loadDailyStatus = async () => {
+        try {
+            const response = await fetch('/api/admin/daily-update');
+            if (response.status === 401) {
+                setAuthenticated(false);
+                return;
+            }
+            const payload = await response.json();
+            if (response.ok) setDailyStatus(payload);
+        } catch {
+            // Polling errors should not interrupt the admin screen.
+        }
+    };
+
+    useEffect(() => {
+        if (!authenticated) return undefined;
+        loadDailyStatus();
+        const timer = window.setInterval(loadDailyStatus, 2500);
+        return () => window.clearInterval(timer);
+    }, [authenticated]);
 
     useEffect(() => {
         const closeMenu = () => {
@@ -408,6 +434,24 @@ export default function AdminPage() {
         }
     };
 
+    const handleStartDailyUpdate = async () => {
+        setStartingDailyUpdate(true);
+        setNotice('');
+        setError('');
+        try {
+            const response = await fetch('/api/admin/daily-update', { method: 'POST' });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Không thể bắt đầu cập nhật');
+            setDailyStatus(payload);
+            setDailyLogOpen(true);
+            setNotice(payload.started ? 'Đã bắt đầu cập nhật hằng ngày' : 'Task cập nhật đang chạy');
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setStartingDailyUpdate(false);
+        }
+    };
+
     const handleDeleteChannel = async (channel) => {
         setOpenMenuId(null);
         setMenuPosition(null);
@@ -517,6 +561,31 @@ export default function AdminPage() {
                         onChange={(event) => setQuery(event.target.value)}
                         placeholder="Tìm kênh, URL, trạng thái"
                     />
+                </div>
+                <div className="admin-daily-update">
+                    <button
+                        className="admin-primary-btn"
+                        type="button"
+                        onClick={handleStartDailyUpdate}
+                        disabled={startingDailyUpdate || dailyStatus?.running}
+                    >
+                        {startingDailyUpdate || dailyStatus?.running ? <Loader2 className="spin" size={18} /> : <PlayCircle size={18} />}
+                        Cập nhật
+                    </button>
+                    <button
+                        className="admin-secondary-btn"
+                        type="button"
+                        onClick={() => setDailyLogOpen(true)}
+                    >
+                        <Terminal size={16} />
+                        Log
+                    </button>
+                    <div className="admin-daily-progress" title={dailyStatus?.progress?.label || 'Chưa chạy'}>
+                        <span>{dailyStatus?.progress?.label || 'Chưa chạy'}</span>
+                        <div>
+                            <i style={{ width: `${dailyStatus?.progress?.percent || 0}%` }} />
+                        </div>
+                    </div>
                 </div>
                 {/* <button className="admin-secondary-btn" type="button" onClick={handleImportWorkbook} disabled={importingChannels}>
                     {importingChannels ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
@@ -800,6 +869,63 @@ export default function AdminPage() {
                             >
                                 {confirmBusy ? <Loader2 className="spin" size={16} /> : null}
                                 {confirmModal.confirmLabel || 'Xác nhận'}
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            )}
+
+            {dailyLogOpen && (
+                <div className="modal-overlay admin-modal-overlay" onClick={() => setDailyLogOpen(false)}>
+                    <section className="modal-container admin-modal admin-log-modal" onClick={(event) => event.stopPropagation()}>
+                        <div className="modal-header admin-modal-header">
+                            <h2>Log cập nhật hằng ngày</h2>
+                            <p>{dailyStatus?.progress?.label || 'Chưa có task nào đang chạy'}</p>
+                        </div>
+
+                        <div className="admin-log-summary">
+                            <div>
+                                <span>{dailyStatus?.progress?.percent || 0}%</span>
+                                <small>Tiến độ</small>
+                            </div>
+                            <div>
+                                <span>{dailyStatus?.progress?.channelsDone || 0}/{dailyStatus?.progress?.channelsTotal || 0}</span>
+                                <small>Kênh</small>
+                            </div>
+                            <div>
+                                <span>{dailyStatus?.progress?.analysisDone || 0}/{dailyStatus?.progress?.analysisTotal || 0}</span>
+                                <small>Phân tích</small>
+                            </div>
+                        </div>
+
+                        <div className="admin-log-progress">
+                            <i style={{ width: `${dailyStatus?.progress?.percent || 0}%` }} />
+                        </div>
+
+                        <div className="admin-log-list">
+                            {(dailyStatus?.logs || []).length ? (
+                                dailyStatus.logs.map((entry) => (
+                                    <div key={entry.id} className={`admin-log-line ${entry.level || 'info'}`}>
+                                        <time>{formatDate(entry.at)}</time>
+                                        <span>{entry.message}</span>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="admin-log-empty">Chưa có log</div>
+                            )}
+                        </div>
+
+                        <div className="modal-footer">
+                            <button className="modal-btn-cancel" type="button" onClick={() => setDailyLogOpen(false)}>
+                                Đóng
+                            </button>
+                            <button
+                                className="modal-btn-confirm"
+                                type="button"
+                                onClick={handleStartDailyUpdate}
+                                disabled={startingDailyUpdate || dailyStatus?.running}
+                            >
+                                {dailyStatus?.running ? 'Đang chạy' : 'Chạy lại'}
                             </button>
                         </div>
                     </section>
