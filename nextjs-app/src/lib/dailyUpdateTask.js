@@ -6,7 +6,8 @@ import { syncChannelVideos } from './youtubeChannelSync';
 
 const MAX_LOGS = 1200;
 const DEFAULT_ANALYSIS_LIMIT = 10000;
-const DEFAULT_ANALYSIS_BATCH_SIZE = 20;
+const DEFAULT_ANALYSIS_BATCH_SIZE = 100;
+const DEFAULT_CHANNEL_SYNC_CONCURRENCY = 3;
 
 function createInitialState() {
     return {
@@ -318,27 +319,13 @@ async function runDatabaseAnalysis() {
     }
 }
 
-async function runDailyUpdate() {
-    globalState.running = true;
-    globalState.status = 'running';
-    globalState.phase = 'sync';
-    globalState.startedAt = new Date().toISOString();
-    globalState.finishedAt = null;
-    globalState.error = null;
-    setProgress({ percent: 1, label: 'Đang tải danh sách kênh' });
-    addLog('info', 'Bắt đầu cập nhật hằng ngày bằng database.');
+async function runChannelSyncQueue(channels) {
+    const concurrency = Math.max(Number(process.env.DAILY_CHANNEL_SYNC_CONCURRENCY || DEFAULT_CHANNEL_SYNC_CONCURRENCY), 1);
+    let nextIndex = 0;
 
-    try {
-        const channels = (await listAdminChannels()).filter((channel) => channel.channel_url || channel.source_channel_url);
-        setProgress({
-            channelsTotal: channels.length,
-            channelsDone: 0,
-            label: `Chuẩn bị đồng bộ ${channels.length} kênh`,
-            percent: 2,
-        });
-        addLog('info', `Tìm thấy ${channels.length} kênh có URL trong database.`);
-
-        for (const channel of channels) {
+    async function worker() {
+        while (nextIndex < channels.length) {
+            const channel = channels[nextIndex++];
             const url = channel.channel_url || channel.source_channel_url;
             addLog('info', `Đồng bộ video: ${channel.channel_name}`);
             try {
@@ -360,6 +347,36 @@ async function runDailyUpdate() {
                 label: `Đã đồng bộ ${channelsDone}/${channels.length} kênh`,
             });
         }
+    }
+
+    addLog('info', `Sync kênh chạy ${Math.min(concurrency, channels.length)} luồng song song.`);
+    await Promise.all(Array.from(
+        { length: Math.min(concurrency, channels.length) },
+        () => worker()
+    ));
+}
+
+async function runDailyUpdate() {
+    globalState.running = true;
+    globalState.status = 'running';
+    globalState.phase = 'sync';
+    globalState.startedAt = new Date().toISOString();
+    globalState.finishedAt = null;
+    globalState.error = null;
+    setProgress({ percent: 1, label: 'Đang tải danh sách kênh' });
+    addLog('info', 'Bắt đầu cập nhật hằng ngày bằng database.');
+
+    try {
+        const channels = (await listAdminChannels()).filter((channel) => channel.channel_url || channel.source_channel_url);
+        setProgress({
+            channelsTotal: channels.length,
+            channelsDone: 0,
+            label: `Chuẩn bị đồng bộ ${channels.length} kênh`,
+            percent: 2,
+        });
+        addLog('info', `Tìm thấy ${channels.length} kênh có URL trong database.`);
+
+        await runChannelSyncQueue(channels);
 
         globalState.phase = 'analysis';
         setProgress({ label: 'Đang phân tích caption/summary từ database', percent: 55 });
