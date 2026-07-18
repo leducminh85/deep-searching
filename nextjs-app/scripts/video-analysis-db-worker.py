@@ -11,7 +11,7 @@ import yt_dlp
 
 MIN_SUMMARY_WORDS = 25
 MAX_AI_RETRIES = int(os.getenv("DB_ANALYSIS_MAX_AI_RETRIES", "3"))
-MAX_WORKERS = int(os.getenv("DB_ANALYSIS_MAX_WORKERS", "2"))
+MAX_WORKERS = int(os.getenv("DB_ANALYSIS_MAX_WORKERS", "4"))
 MIN_DELAY_SECONDS = float(os.getenv("DB_ANALYSIS_MIN_DELAY_SECONDS", "3"))
 MAX_DELAY_SECONDS = float(os.getenv("DB_ANALYSIS_MAX_DELAY_SECONDS", "7"))
 
