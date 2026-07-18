@@ -45,7 +45,7 @@ export async function POST(request) {
 
         return NextResponse.json({
             channel,
-            message: 'Đã thêm kênh và bắt đầu fetch video nền',
+            message: 'Đã thêm kênh',
         }, { status: 202 });
     } catch (err) {
         return NextResponse.json({ error: err.message || 'Không thể thêm kênh' }, { status: 500 });

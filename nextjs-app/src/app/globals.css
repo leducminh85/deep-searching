@@ -249,11 +249,12 @@ tr:last-child td {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  gap: 2rem;
 }
 
 .admin-page .header {
   flex: 0 0 auto;
-  margin-bottom: 1rem;
+  margin-bottom: 0;
 }
 
 .admin-page main {
@@ -412,6 +413,48 @@ tr:last-child td {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.admin-daily-update {
+  min-width: 320px;
+  display: grid;
+  grid-template-columns: auto auto minmax(150px, 1fr);
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.admin-daily-progress {
+  min-width: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.admin-daily-progress span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.admin-daily-progress div,
+.admin-log-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.52);
+  border: 1px solid var(--glass-border);
+}
+
+.admin-daily-progress i,
+.admin-log-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #14b8a6, var(--primary-hover), var(--accent-color));
+  transition: width 0.24s ease;
 }
 
 .admin-add-channel input,
@@ -899,6 +942,25 @@ tr:last-child td {
   .admin-search {
     width: 100%;
   }
+
+  .admin-daily-update {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .admin-daily-progress {
+    grid-column: 1 / -1;
+  }
+
+  .admin-log-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-log-line {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
 }
 
 /* Admin channel console refinements */
@@ -1131,6 +1193,110 @@ tr:last-child td {
 
 .admin-modal .modal-btn-confirm.danger:hover {
   background: #be123c;
+}
+
+.admin-log-modal {
+  width: min(920px, calc(100vw - 2rem));
+  max-width: 920px;
+}
+
+.admin-log-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-log-summary div {
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.24);
+}
+
+.admin-log-summary span,
+.admin-log-summary small {
+  display: block;
+}
+
+.admin-log-summary span {
+  color: var(--text-color);
+  font-weight: 850;
+}
+
+.admin-log-summary small {
+  margin-top: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.admin-log-progress {
+  margin-bottom: 1rem;
+}
+
+.admin-log-list {
+  height: min(420px, 48vh);
+  overflow: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.34);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(20, 184, 166, 0.72) rgba(15, 23, 42, 0.42);
+}
+
+.admin-log-line {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.65rem 0.8rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.admin-log-line time {
+  color: rgba(148, 163, 184, 0.78);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-log-line span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-log-line.success span {
+  color: #34d399;
+}
+
+.admin-log-line.warning span {
+  color: #fbbf24;
+}
+
+.admin-log-line.danger span {
+  color: #fb7185;
+}
+
+.admin-log-empty {
+  padding: 2rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.admin-log-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.admin-log-list::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.42);
+  border-radius: 999px;
+}
+
+.admin-log-list::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(15, 23, 42, 0.42);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(20, 184, 166, 0.95), rgba(99, 102, 241, 0.8));
 }
 
 .admin-video-panel {
