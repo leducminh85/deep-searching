@@ -10,10 +10,19 @@ const { Pool } = pg;
 let pool = null;
 let usageSchemaPromise = null;
 
+function getDefaultDatabaseUrl() {
+    const password = process.env.POSTGRES_PASSWORD || 'postgres';
+    const user = process.env.POSTGRES_USER || 'postgres';
+    const host = process.env.POSTGRES_HOST || 'localhost';
+    const port = process.env.POSTGRES_PORT || '5432';
+    const db = process.env.POSTGRES_APP_DB || process.env.POSTGRES_DB || 'deep_searching';
+    return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${db}`;
+}
+
 export function getPool() {
     if (!pool) {
         pool = new Pool({
-            connectionString: process.env.LOCAL_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/deep_searching',
+            connectionString: process.env.LOCAL_DATABASE_URL || getDefaultDatabaseUrl(),
         });
         pool.on('error', (err) => {
             console.error('❌ PostgreSQL pool error:', err);

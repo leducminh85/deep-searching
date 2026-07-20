@@ -904,7 +904,7 @@ export default function AdminPage() {
 
                         <div className="admin-log-list">
                             {(dailyStatus?.logs || []).length ? (
-                                dailyStatus.logs.map((entry) => (
+                                [...dailyStatus.logs].reverse().map((entry) => (
                                     <div key={entry.id} className={`admin-log-line ${entry.level || 'info'}`}>
                                         <time>{formatDate(entry.at)}</time>
                                         <span>{entry.message}</span>
