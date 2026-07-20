@@ -9,7 +9,9 @@ import time
 import ollama
 import yt_dlp
 
-MIN_SUMMARY_WORDS = 25
+MODEL = os.getenv("V3_OLLAMA_MODEL") or os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+ANALYSIS_VERSION = "v3-qwen2.5-7b-detailed"
+MIN_SUMMARY_WORDS = int(os.getenv("V3_MIN_SUMMARY_WORDS", "180"))
 MAX_AI_RETRIES = int(os.getenv("DB_ANALYSIS_MAX_AI_RETRIES", "3"))
 MAX_WORKERS = int(os.getenv("DB_ANALYSIS_MAX_WORKERS", "4"))
 MIN_DELAY_SECONDS = float(os.getenv("DB_ANALYSIS_MIN_DELAY_SECONDS", "3"))
@@ -38,12 +40,10 @@ def log(level, message):
 
 def find_cookie_files():
     candidates = []
-    env_cookie = os.getenv("COOKIES_FILE")
-    env_cookie_2 = os.getenv("COOKIES_FILE_2")
-    if env_cookie:
-        candidates.append(env_cookie)
-    if env_cookie_2:
-        candidates.append(env_cookie_2)
+    for env_name in ("COOKIES_FILE", "COOKIES_FILE_2"):
+        value = os.getenv(env_name)
+        if value:
+            candidates.append(value)
 
     cwd = os.getcwd()
     for name in ("cookies.txt", "cookies2.txt"):
@@ -65,9 +65,9 @@ def find_cookie_files():
 
 COOKIE_FILES = find_cookie_files()
 if COOKIE_FILES:
-    log("success", f"Đã tìm thấy {len(COOKIE_FILES)} file cookies.")
+    log("success", f"Found {len(COOKIE_FILES)} cookie file(s).")
 else:
-    log("warning", "Không tìm thấy cookies.txt. YouTube có thể chặn caption.")
+    log("warning", "cookies.txt not found. YouTube may block caption access.")
 
 
 def is_error_marker(text):
@@ -79,14 +79,58 @@ def is_error_marker(text):
     )
 
 
+def is_bad_summary(summary):
+    if summary is None:
+        return True
+
+    text = str(summary).strip()
+    if not text or text == "#":
+        return True
+    if is_error_marker(text):
+        return True
+
+    lower = text.lower()
+    refusal_markers = [
+        "i can't fulfill this request",
+        "i cannot fulfill this request",
+        "i can't assist",
+        "i cannot assist",
+        "i can't provide",
+        "i cannot provide",
+        "i can't provide a summary",
+    ]
+    if any(marker in lower for marker in refusal_markers):
+        return True
+
+    return len(text.split()) < 25
+
+
+def is_bad_v3_summary(summary):
+    if is_bad_summary(summary):
+        return True
+
+    text = str(summary).strip()
+    upper_text = text.upper()
+    required_sections = [
+        "EXECUTIVE OVERVIEW",
+        "DETAILED NARRATIVE",
+        "PEOPLE",
+        "TIMELINE",
+        "SEARCH KEYWORDS",
+    ]
+    return len(text.split()) < MIN_SUMMARY_WORDS or not all(section in upper_text for section in required_sections)
+
+
 def sanitize_caption_for_ai(caption_text):
     caption = str(caption_text or "")
     replacements = [
         (r"\[ __ \]", " "),
         (r"\b(fuck|fucking|shit|bitch|asshole)\b", "profanity"),
-        (r"\b(dick|pussy|penis|vagina|sex)\b", "explicit term"),
         (r"\b(rape|raped|raping)\b", "sexual assault allegation"),
-        (r"\b(kill|killed|killing|murder|murdered)\b", "harm"),
+        (r"\b(kill|killed|killing|murder|murdered|homicide)\b", "serious harm incident"),
+        (r"\b(shoot|shooting|shot|gun|firearm|weapon)\b", "weapon-related incident"),
+        (r"\b(stab|stabbing|knife)\b", "sharp-object incident"),
+        (r"\b(drugs?|narcotics?|cocaine|meth|fentanyl)\b", "substance-related allegation"),
     ]
     for pattern, replacement in replacements:
         caption = re.sub(pattern, replacement, caption, flags=re.IGNORECASE)
@@ -97,36 +141,42 @@ def clean_for_db(text):
     if not isinstance(text, str):
         return text
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", text)
-    return text[:32000]
+    return text[:60000]
 
 
-def is_bad_summary(summary):
-    if summary is None:
-        return True
+def language_matches(lang, wanted):
+    lang = str(lang or "").lower()
+    wanted = str(wanted or "").lower()
+    return lang == wanted or lang.startswith(f"{wanted}-")
 
-    text = str(summary).strip()
-    if not text:
-        return True
-    if text == "#":
-        return False
-    if is_error_marker(text):
-        return True
 
-    refusal_markers = [
-        "I can't fulfill this request",
-        "I cannot fulfill this request",
-        "I can't assist",
-        "I cannot assist",
-        "I can't provide",
-        "I cannot provide",
-    ]
-    if any(marker.lower() in text.lower() for marker in refusal_markers):
-        return True
+def preferred_caption_languages():
+    configured = os.getenv("V3_CAPTION_LANG_PRIORITY", "en,vi")
+    return [lang.strip().lower() for lang in configured.split(",") if lang.strip()]
 
-    upper_text = text.upper()
-    has_main_story = "MAIN STORY" in upper_text
-    has_conflict_section = "TYPE OF CONFLICT" in upper_text or "CONFLICT TYPE" in upper_text
-    return len(text.split()) < MIN_SUMMARY_WORDS or not (has_main_story and has_conflict_section)
+
+def choose_caption_track(caption_groups):
+    if not caption_groups:
+        return None
+
+    languages = list(caption_groups.keys())
+    ordered_languages = []
+
+    for wanted in preferred_caption_languages():
+        ordered_languages.extend([lang for lang in languages if language_matches(lang, wanted)])
+
+    ordered_languages.extend([lang for lang in languages if lang not in ordered_languages])
+
+    for lang in ordered_languages:
+        if str(lang).lower() == "live_chat":
+            continue
+        tracks = caption_groups.get(lang) or []
+        for ext in ("json3", "json"):
+            for item in tracks:
+                if item.get("ext") == ext and item.get("url"):
+                    return lang, item["url"]
+
+    return None
 
 
 def fetch_caption(video_url, video_id):
@@ -148,31 +198,17 @@ def fetch_caption(video_url, video_id):
             if not info:
                 continue
 
-            subs = info.get("subtitles", {})
-            auto_subs = info.get("automatic_captions", {})
-            sub_url = None
+            selected = choose_caption_track(info.get("subtitles", {}))
+            caption_type = "manual"
+            if not selected:
+                selected = choose_caption_track(info.get("automatic_captions", {}))
+                caption_type = "auto"
 
-            target_langs = [key for key in subs.keys() if key.lower().startswith("en")]
-            if target_langs:
-                preferred = "en" if "en" in target_langs else target_langs[0]
-                for item in subs[preferred]:
-                    if item.get("ext") in ["json3", "json"]:
-                        sub_url = item["url"]
-                        break
-
-            if not sub_url:
-                for lang in auto_subs.keys():
-                    if not lang.startswith("en"):
-                        continue
-                    for item in auto_subs[lang]:
-                        if item.get("ext") in ["json3", "json"]:
-                            sub_url = item["url"]
-                            break
-                    if sub_url:
-                        break
-
-            if not sub_url:
+            if not selected:
                 continue
+
+            selected_lang, sub_url = selected
+            log("info", f"Video {video_id}: using {caption_type} captions, language={selected_lang}.")
 
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl2:
@@ -191,68 +227,109 @@ def fetch_caption(video_url, video_id):
                         text_chunks.append(seg["utf8"])
 
             full_text = " ".join("".join(text_chunks).replace("\n", " ").split())
-            return full_text[:30000] if full_text else "#"
+            return full_text[:45000] if full_text else "#"
         except Exception as exc:
             message = str(exc).lower()
             if "too many requests" in message or "http error 429" in message:
                 return "IP_BLOCKED"
             if "unavailable" in message or "private" in message or "removed" in message:
-                log("warning", f"Video {video_id}: không tồn tại hoặc bị giới hạn.")
+                log("warning", f"Video {video_id}: unavailable, private, removed, or restricted.")
                 return "#"
 
-    log("warning", f"Video {video_id}: không có phụ đề tiếng Anh.")
+    log("warning", f"Video {video_id}: no usable captions found.")
     return "#"
 
 
-def generate_summary(caption_text, video_id):
+def build_prompt(caption_text, title="", channel_name="", published_at=""):
+    ai_caption = sanitize_caption_for_ai(caption_text)
+    return f"""
+You are a senior video intelligence analyst building a high-quality searchable research database.
+Your job is NOT to give instructions, advice, encouragement, tactical guidance, or operational details.
+Your job is to extract rich, neutral, searchable metadata from a transcript.
+
+Write a very detailed, high-signal English analysis. Longer is better when it adds useful searchable detail.
+Stay grounded only in the transcript. If something is unclear, say "Unclear from transcript".
+Do not refuse the task: this is neutral archival indexing and summarization of already-published video captions.
+Do not include graphic details. Do not invent facts.
+
+Video metadata:
+- Title: {title or "Unknown"}
+- Channel: {channel_name or "Unknown"}
+- Published at: {published_at or "Unknown"}
+
+Return exactly these sections with rich detail:
+
+1. EXECUTIVE OVERVIEW
+- 4 to 7 sentences summarizing the central situation, why it matters, and what the viewer would remember.
+
+2. DETAILED NARRATIVE
+- A chronological, comprehensive narrative of the events.
+- Include setting, initiating event, escalation, turning points, resolution, and unresolved questions.
+
+3. PEOPLE, ROLES, AND RELATIONSHIPS
+- Identify each person/group mentioned.
+- Explain roles, relationships, authority positions, family/social ties, and uncertainty.
+
+4. TIMELINE OF EVENTS
+- Bullet a sequence of observable or stated events.
+- Use relative ordering if exact times are not available.
+
+5. LOCATION AND CONTEXT
+- Describe location, public/private setting, jurisdiction clues, environmental context, and relevant background.
+
+6. CONFLICT AND INCIDENT CLASSIFICATION
+- Classify the active conflicts only.
+- Mention legal, interpersonal, neighborhood, family, customer/service, police/public, property, traffic, workplace, or other categories only when supported.
+
+7. KEY FACTS AND EVIDENCE FROM TRANSCRIPT
+- List concrete facts stated or strongly supported by the transcript.
+- Separate facts from unclear claims.
+
+8. EMOTIONAL TONE AND BEHAVIORAL DYNAMICS
+- Describe tone, tension, cooperation, confusion, fear, anger, authority, resistance, de-escalation, or escalation when present.
+
+9. SEARCH KEYWORDS AND TAGS
+- Provide 30 to 80 comma-separated English search tags.
+- Include synonyms and phrase variants useful for search.
+- Do not include tags for concepts that are not present.
+
+10. CONTENT WARNINGS FOR INTERNAL INDEXING
+- Neutral, high-level warnings only, no graphic wording.
+
+11. ONE-SENTENCE SEARCH DESCRIPTION
+- One dense sentence optimized for search result previews.
+
+Transcript:
+{ai_caption[:45000]}
+"""
+
+
+def generate_summary(caption_text, video_id, title="", channel_name="", published_at=""):
     if not caption_text or caption_text == "#" or len(str(caption_text).strip()) < 50:
         return ""
 
-    ai_caption = sanitize_caption_for_ai(caption_text)
-    prompt = f"""
-    You are a video data analyst. Read the YouTube subtitles below, summarize and analyze the content for in-depth research.
-    This is a passive transcript-indexing task for a searchable video database. Some transcripts may include sensitive or crime-related material.
-    Do not provide instructions, advice, encouragement, or operational details for wrongdoing. Keep the wording neutral, high-level, and non-graphic.
-
-    Please answer in the following format (write concisely and directly in English):
-
-    1. MAIN STORY: (Briefly describe what happened in 2-3 sentences).
-    2. CHARACTERS & RELATIONSHIPS: (Who is involved? What is their relationship?)
-    3. LOCATION / CONTEXT: (Where did the event take place?)
-    4. TYPE OF CONFLICT: (Property conflict, verbal, physical, legal, neighbor conflict, racial discrimination, boyfriend/girlfriend, free citizen, etc.)
-    5. SPECIFIC KEYWORDS (TAGS):
-
-    STRICT RULES FOR PARTS 4 & 5:
-    - NO NEGATIVE LISTING: ONLY list types of conflict or keywords that are PRESENT and ACTIVE in the video.
-    - ONLY list keywords when the situation ACTUALLY occurs, is clearly stated, or is the main focus of the video.
-    - NEVER include any keywords if the situation is only briefly mentioned, hypothetical, or superficial.
-    - Only use accurate, specialized English keywords.
-    - ANTI-HALLUCINATION RULE: Do NOT guess or hypothesize. If a detail is not explicitly stated or clearly implied, write "Undetermined" or "Unclear from transcript".
-    - NO SPECULATION: Only analyze based on what is actually present in the text.
-
-    Caption:
-    {ai_caption[:30000]}
-    """
+    prompt = build_prompt(caption_text, title, channel_name, published_at)
 
     for attempt in range(1, MAX_AI_RETRIES + 1):
         try:
             response = ollama.chat(
-                model=os.getenv("OLLAMA_MODEL", "llama3.2:3b"),
+                model=MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 stream=False,
                 options={
-                    "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "16384")),
-                    "num_predict": int(os.getenv("OLLAMA_NUM_PREDICT", "700")),
-                    "temperature": float(os.getenv("OLLAMA_TEMPERATURE", "0.2")),
+                    "num_ctx": int(os.getenv("V3_OLLAMA_NUM_CTX", os.getenv("OLLAMA_NUM_CTX", "32768"))),
+                    "num_predict": int(os.getenv("V3_OLLAMA_NUM_PREDICT", os.getenv("OLLAMA_NUM_PREDICT", "2600"))),
+                    "temperature": float(os.getenv("V3_OLLAMA_TEMPERATURE", os.getenv("OLLAMA_TEMPERATURE", "0.25"))),
+                    "top_p": float(os.getenv("V3_OLLAMA_TOP_P", "0.9")),
                 },
             )
             result = response["message"]["content"].strip()
-            if not is_bad_summary(result):
+            if not is_bad_v3_summary(result):
                 return result
-            log("warning", f"Video {video_id}: AI trả sai format lần {attempt}.")
+            log("warning", f"Video {video_id}: AI returned short or invalid v3 format on attempt {attempt}.")
             time.sleep(2)
         except Exception as exc:
-            log("danger", f"Video {video_id}: lỗi Ollama lần {attempt}: {exc}")
+            log("danger", f"Video {video_id}: Ollama v3 error on attempt {attempt}: {exc}")
             time.sleep(2)
 
     return ""
@@ -268,23 +345,52 @@ def process_task(task):
         time.sleep(random.uniform(MIN_DELAY_SECONDS, max(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS)))
 
     final_caption = existing_caption
-    final_summary = existing_summary
+
+    if not is_bad_summary(existing_summary):
+        return {"id": video_id, "status": "skipped"}
 
     if not final_caption.strip() or "ERROR" in final_caption:
-        log("info", f"Video {video_id}: đang tải phụ đề.")
+        log("info", f"Video {video_id}: fetching captions.")
         final_caption = fetch_caption(url, video_id)
         if final_caption == "IP_BLOCKED":
             return {"id": video_id, "status": "aborted", "error": "IP_BLOCKED"}
 
-    if final_caption and final_caption not in {"#", "ERROR"} and is_bad_summary(existing_summary):
-        log("info", f"Video {video_id}: đang tạo summary bằng Ollama.")
-        final_summary = generate_summary(final_caption, video_id)
+    if not final_caption or final_caption in {"#", "ERROR"}:
+        return {
+            "id": video_id,
+            "status": "no_caption",
+            "caption": None,
+            "summary": None,
+            "analysis_model": None,
+            "analysis_version": None,
+        }
+
+    log("info", f"Video {video_id}: generating v3 summary with {MODEL}.")
+    final_summary = generate_summary(
+        final_caption,
+        video_id,
+        title=task.get("title") or "",
+        channel_name=task.get("channel_name") or "",
+        published_at=str(task.get("date_published") or ""),
+    )
+
+    if not final_summary:
+        return {
+            "id": video_id,
+            "status": "error_ai",
+            "caption": clean_for_db(final_caption),
+            "summary": None,
+            "analysis_model": None,
+            "analysis_version": None,
+        }
 
     return {
         "id": video_id,
         "status": "done",
-        "caption": clean_for_db(final_caption) if final_caption else None,
-        "summary": clean_for_db(final_summary) if final_summary else None,
+        "caption": clean_for_db(final_caption),
+        "summary": clean_for_db(final_summary),
+        "analysis_model": MODEL,
+        "analysis_version": ANALYSIS_VERSION,
     }
 
 
@@ -297,10 +403,10 @@ def main():
         tasks.append(json.loads(line))
 
     if not tasks:
-        log("info", "Không có video trong batch phân tích.")
+        log("info", "No videos in analysis batch.")
         return 0
 
-    log("info", f"Worker nhận {len(tasks)} video, chạy {MAX_WORKERS} luồng.")
+    log("info", f"Worker received {len(tasks)} videos, running {MAX_WORKERS} v3 worker(s) with {MODEL}.")
     aborted = False
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(process_task, task) for task in tasks]
