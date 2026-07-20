@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:clone:v3": "node scripts/clone-database.js --target deep_searching_v3"
   },
   "dependencies": {
     "@supabase/ssr": "^0.9.0",

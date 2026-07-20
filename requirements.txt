@@ -10,3 +10,4 @@ yt-dlp
 requests
 ollama
 google-api-python-client
+psycopg2-binary
