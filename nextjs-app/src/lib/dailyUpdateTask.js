@@ -92,7 +92,7 @@ function isBadSummary(summary) {
     if (summary === null || summary === undefined) return true;
     const text = String(summary).trim();
     if (!text) return true;
-    if (text === '#') return false;
+    if (text === '#') return true;
     if (isErrorMarker(text)) return true;
 
     const lower = text.toLowerCase();
@@ -106,15 +106,18 @@ function isBadSummary(summary) {
     ];
     if (refusalMarkers.some((marker) => lower.includes(marker))) return true;
 
-    const upper = text.toUpperCase();
-    const hasMainStory = upper.includes('MAIN STORY');
-    const hasConflict = upper.includes('TYPE OF CONFLICT') || upper.includes('CONFLICT TYPE');
-    return text.split(/\s+/).filter(Boolean).length < 25 || !(hasMainStory && hasConflict);
+    return text.split(/\s+/).filter(Boolean).length < 25;
 }
 
 function needsAnalysis(row) {
-    const caption = String(row.caption || '').trim();
-    return !caption || caption.includes('ERROR') || (caption !== '#' && isBadSummary(row.summary));
+    return isBadSummary(row.summary);
+}
+
+async function ensureAnalysisMetadataSchema() {
+    const db = getPool();
+    await db.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS analysis_model TEXT`);
+    await db.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS analysis_version TEXT`);
+    await db.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS analysis_updated_at TIMESTAMPTZ`);
 }
 
 async function countAnalysisCandidates() {
@@ -124,18 +127,11 @@ async function countAnalysisCandidates() {
         FROM videos
         WHERE url ~* 'youtube\\.com|youtu\\.be'
           AND (
-              caption IS NULL
-              OR btrim(caption) = ''
-              OR caption LIKE '%ERROR%'
-              OR (
-                  COALESCE(btrim(caption), '') <> '#'
-                  AND (
-                      summary IS NULL
-                      OR btrim(summary) = ''
-                      OR summary IN ('ERROR', 'ERROR_AI', 'ABORTED', 'IP_BLOCKED')
-                      OR summary LIKE 'ERROR:%'
-                  )
-              )
+              summary IS NULL
+              OR btrim(summary) = ''
+              OR btrim(summary) = '#'
+              OR upper(btrim(summary)) IN ('ERROR', 'ERROR_AI', 'ABORTED', 'IP_BLOCKED')
+              OR upper(btrim(summary)) LIKE 'ERROR:%'
           )
     `);
     return result.rows[0]?.total || 0;
@@ -145,23 +141,16 @@ async function getAnalysisBatch(seenIds, size) {
     const db = getPool();
     const seen = Array.from(seenIds);
     const result = await db.query(`
-        SELECT id, url, caption, summary
+        SELECT id, title, url, channel_name, date_published, caption, summary
         FROM videos
         WHERE url ~* 'youtube\\.com|youtu\\.be'
           AND (cardinality($1::bigint[]) = 0 OR id <> ALL($1::bigint[]))
           AND (
-              caption IS NULL
-              OR btrim(caption) = ''
-              OR caption LIKE '%ERROR%'
-              OR (
-                  COALESCE(btrim(caption), '') <> '#'
-                  AND (
-                      summary IS NULL
-                      OR btrim(summary) = ''
-                      OR summary IN ('ERROR', 'ERROR_AI', 'ABORTED', 'IP_BLOCKED')
-                      OR summary LIKE 'ERROR:%'
-                  )
-              )
+              summary IS NULL
+              OR btrim(summary) = ''
+              OR btrim(summary) = '#'
+              OR upper(btrim(summary)) IN ('ERROR', 'ERROR_AI', 'ABORTED', 'IP_BLOCKED')
+              OR upper(btrim(summary)) LIKE 'ERROR:%'
           )
         ORDER BY created_at ASC, id ASC
         LIMIT $2
@@ -171,21 +160,36 @@ async function getAnalysisBatch(seenIds, size) {
 }
 
 async function updateVideoAnalysis(result) {
+    if (!result?.id || result.status === 'aborted' || result.status === 'skipped') return;
+
     const updates = [];
     const params = [result.id];
 
-    if (typeof result.caption === 'string' && result.caption) {
+    if (Object.prototype.hasOwnProperty.call(result, 'caption')) {
         params.push(result.caption);
         updates.push(`caption = $${params.length}`);
     }
 
-    if (typeof result.summary === 'string' && result.summary) {
+    if (Object.prototype.hasOwnProperty.call(result, 'summary')) {
         params.push(result.summary);
         updates.push(`summary = $${params.length}`);
     }
 
+    if (result.status === 'done') {
+        params.push(result.analysis_model || null);
+        updates.push(`analysis_model = $${params.length}`);
+        params.push(result.analysis_version || null);
+        updates.push(`analysis_version = $${params.length}`);
+        updates.push('analysis_updated_at = NOW()');
+    } else if (result.status === 'no_caption' || result.status === 'error_ai') {
+        updates.push('analysis_model = NULL');
+        updates.push('analysis_version = NULL');
+        updates.push('analysis_updated_at = NULL');
+    }
+
     if (!updates.length) return;
 
+    await ensureAnalysisMetadataSchema();
     const db = getPool();
     await db.query(`
         UPDATE videos
@@ -294,6 +298,7 @@ async function runAnalysisWorkerBatch(batch) {
 }
 
 async function runDatabaseAnalysis() {
+    await ensureAnalysisMetadataSchema();
     const limit = Math.max(Number(process.env.DAILY_ANALYSIS_LIMIT || DEFAULT_ANALYSIS_LIMIT), 1);
     const batchSize = Math.max(Number(process.env.DAILY_ANALYSIS_BATCH_SIZE || DEFAULT_ANALYSIS_BATCH_SIZE), 1);
     const estimatedTotal = Math.min(await countAnalysisCandidates(), limit);
