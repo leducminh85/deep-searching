@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Youtube, ArrowUp, Search, Filter, X, Plus, Languages, AlertTriangle } from 'lucide-react';
+import { Youtube, ArrowUp, Search, Filter, X, Plus, Languages, AlertTriangle, MoreHorizontal, Flag } from 'lucide-react';
 import SearchCat from './SearchCat';
 
 
@@ -40,6 +40,29 @@ const formatDateForDisplay = (value) => {
         displayDate.getUTCDate()
     );
 };
+
+const CHANNEL_ACTIONS = [
+    {
+        id: 'add',
+        label: 'Thêm kênh',
+        title: 'Thêm kênh nguồn',
+        description: 'Gửi yêu cầu thêm kênh YouTube mới vào hệ thống.',
+        noteLabel: 'Ghi chú',
+        notePlaceholder: 'Nhập ghi chú nếu có...',
+        noteRequired: false,
+        Icon: Plus,
+    },
+    {
+        id: 'report',
+        label: 'Report kênh',
+        title: 'Report kênh',
+        description: 'Báo kênh có vấn đề để đội quản trị kiểm tra.',
+        noteLabel: 'Lý do',
+        notePlaceholder: 'Nhập lý do report kênh...',
+        noteRequired: true,
+        Icon: Flag,
+    },
+];
 
 const Highlight = ({ text, searches, enabled }) => {
     if (!enabled || !searches || searches.length === 0) return <span>{text}</span>;
@@ -159,12 +182,16 @@ const DataTable = ({
     const [columnWidths, setColumnWidths] = useState({});
     const resizingRef = useRef(null);
     const isRequestPendingRef = useRef(false);
-    const [isAddChannelOpen, setIsAddChannelOpen] = useState(false);
-    const [newChannelUrl, setNewChannelUrl] = useState('');
-    const [newChannelNote, setNewChannelNote] = useState('');
+    const [channelActionMenuOpen, setChannelActionMenuOpen] = useState(false);
+    const [activeChannelAction, setActiveChannelAction] = useState(null);
+    const [channelActionUrl, setChannelActionUrl] = useState('');
+    const [channelActionNote, setChannelActionNote] = useState('');
     const [isSubmittingChannel, setIsSubmittingChannel] = useState(false);
-    const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [showSuccessModal, setShowSuccessModal] = useState('');
+    const [channelActionError, setChannelActionError] = useState('');
     const [urlError, setUrlError] = useState('');
+    const [noteError, setNoteError] = useState('');
+    const channelActionCloseTimerRef = useRef(null);
 
     // Translation state
     const hoverTimeoutRef = useRef(null);
@@ -173,6 +200,14 @@ const DataTable = ({
     // Lightbox state
     const [selectedThumbnail, setSelectedThumbnail] = useState(null);
     const [copyrightLink, setCopyrightLink] = useState(null);
+
+    useEffect(() => {
+        return () => {
+            if (channelActionCloseTimerRef.current) {
+                clearTimeout(channelActionCloseTimerRef.current);
+            }
+        };
+    }, []);
 
     const extractMainStory = (summary) => {
         if (!summary || typeof summary !== 'string') return "";
@@ -788,20 +823,72 @@ const DataTable = ({
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const handleAddChannel = async (e) => {
+    const openChannelActionMenu = () => {
+        if (channelActionCloseTimerRef.current) {
+            clearTimeout(channelActionCloseTimerRef.current);
+            channelActionCloseTimerRef.current = null;
+        }
+        setChannelActionMenuOpen(true);
+    };
+
+    const scheduleCloseChannelActionMenu = () => {
+        if (channelActionCloseTimerRef.current) clearTimeout(channelActionCloseTimerRef.current);
+        channelActionCloseTimerRef.current = setTimeout(() => {
+            setChannelActionMenuOpen(false);
+            channelActionCloseTimerRef.current = null;
+        }, 550);
+    };
+
+    const toggleChannelActionMenu = () => {
+        if (channelActionCloseTimerRef.current) {
+            clearTimeout(channelActionCloseTimerRef.current);
+            channelActionCloseTimerRef.current = null;
+        }
+        setChannelActionMenuOpen((open) => !open);
+    };
+
+    const openChannelAction = (actionId) => {
+        if (channelActionCloseTimerRef.current) {
+            clearTimeout(channelActionCloseTimerRef.current);
+            channelActionCloseTimerRef.current = null;
+        }
+        setActiveChannelAction(actionId);
+        setChannelActionMenuOpen(false);
+        setUrlError('');
+        setNoteError('');
+        setChannelActionError('');
+    };
+
+    const closeChannelAction = () => {
+        if (isSubmittingChannel) return;
+        setActiveChannelAction(null);
+        setUrlError('');
+        setNoteError('');
+    };
+
+    const handleChannelActionSubmit = async (e) => {
         e.preventDefault();
         setUrlError('');
+        setNoteError('');
 
-        if (!newChannelUrl.trim()) {
+        const actionConfig = CHANNEL_ACTIONS.find((action) => action.id === activeChannelAction);
+        if (!actionConfig) return;
+
+        if (!channelActionUrl.trim()) {
             setUrlError('Vui lòng nhập địa chỉ kênh');
             return;
         }
 
         // Simple URL validation
         try {
-            new URL(newChannelUrl);
+            new URL(channelActionUrl);
         } catch (_) {
             setUrlError('Vui lòng nhập một địa chỉ URL hợp lệ (ví dụ: https://youtube.com/...)');
+            return;
+        }
+
+        if (actionConfig.noteRequired && !channelActionNote.trim()) {
+            setNoteError('Vui lòng nhập lý do');
             return;
         }
 
@@ -813,23 +900,29 @@ const DataTable = ({
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    channel_url: newChannelUrl,
-                    note: newChannelNote
+                    action_type: actionConfig.id,
+                    channel_url: channelActionUrl,
+                    note: channelActionNote,
+                    reason: actionConfig.id === 'report' ? channelActionNote : undefined,
                 }),
             });
 
             if (response.ok) {
-                setNewChannelUrl('');
-                setNewChannelNote('');
-                setIsAddChannelOpen(false);
-                setShowSuccessModal(true);
+                setChannelActionUrl('');
+                setChannelActionNote('');
+                setActiveChannelAction(null);
+                setChannelActionError('');
+                setShowSuccessModal(actionConfig.id === 'report'
+                    ? 'Cảm ơn bạn! Report kênh đã được ghi nhận và sẽ được kiểm tra.'
+                    : 'Cảm ơn bạn! Kênh nguồn đã được ghi nhận vào hệ thống và sẽ được cập nhật sau ít ngày.'
+                );
             } else {
-                const errData = await response.json();
-                alert(`Lỗi: ${errData.error || 'Không thể gửi yêu cầu'}`);
+                const errData = await response.json().catch(() => ({}));
+                setChannelActionError(errData.error || 'Không thể gửi yêu cầu. Vui lòng thử lại sau.');
             }
         } catch (error) {
-            console.error('Error adding channel:', error);
-            alert('Lỗi hệ thống: Không thể kết nối tới máy chủ. Vui lòng thử lại sau.');
+            console.error('Error submitting channel action:', error);
+            setChannelActionError('Lỗi hệ thống: Không thể kết nối tới máy chủ. Vui lòng thử lại sau.');
         } finally {
             setIsSubmittingChannel(false);
         }
@@ -862,6 +955,7 @@ const DataTable = ({
     };
 
     const visibleData = sortedData.slice(0, visibleRows);
+    const activeChannelActionConfig = CHANNEL_ACTIONS.find((action) => action.id === activeChannelAction);
 
 
     const getYouTubeID = (url) => {
@@ -1412,30 +1506,55 @@ const DataTable = ({
                 >
                     <ArrowUp size={24} />
                 </button>
-                <button
-                    className="floating-btn tour-add-channel"
-                    onClick={() => setIsAddChannelOpen(true)}
-                    title="Thêm kênh nguồn"
+                <div
+                    className={`floating-action-hub ${channelActionMenuOpen ? 'open' : ''}`}
+                    onMouseEnter={openChannelActionMenu}
+                    onMouseLeave={scheduleCloseChannelActionMenu}
                 >
-                    <Plus size={24} />
-                </button>
+                    <div className="floating-action-menu" aria-label="Channel actions">
+                        {CHANNEL_ACTIONS.map(({ id, label, title, Icon }) => (
+                            <button
+                                key={id}
+                                type="button"
+                                className={`floating-btn floating-action-item ${id === 'report' ? 'danger' : ''}`}
+                                onClick={() => openChannelAction(id)}
+                                title={title}
+                                aria-label={title}
+                            >
+                                <Icon size={21} />
+                                <span>{label}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <button
+                        type="button"
+                        className="floating-btn action-hub-btn tour-add-channel"
+                        onClick={toggleChannelActionMenu}
+                        title="Tác vụ kênh"
+                        aria-label="Tác vụ kênh"
+                        aria-expanded={channelActionMenuOpen}
+                    >
+                        <MoreHorizontal size={24} />
+                    </button>
+                </div>
             </div>
 
-            {isAddChannelOpen && (
-                <div className="modal-overlay" onClick={() => !isSubmittingChannel && setIsAddChannelOpen(false)}>
+            {activeChannelActionConfig && (
+                <div className="modal-overlay" onClick={closeChannelAction}>
                     <div className="modal-container" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h2>Thêm kênh nguồn bổ sung</h2>
+                            <h2>{activeChannelActionConfig.title}</h2>
+                            <p>{activeChannelActionConfig.description}</p>
                         </div>
-                        <form onSubmit={handleAddChannel} noValidate>
+                        <form onSubmit={handleChannelActionSubmit} noValidate>
                             <div className="form-group">
                                 <label>Địa chỉ kênh (URL)</label>
                                 <input
                                     type="url"
                                     placeholder="https://www.youtube.com/@channel"
-                                    value={newChannelUrl}
+                                    value={channelActionUrl}
                                     onChange={(e) => {
-                                        setNewChannelUrl(e.target.value);
+                                        setChannelActionUrl(e.target.value);
                                         if (urlError) setUrlError('');
                                     }}
                                     className={urlError ? 'input-error' : ''}
@@ -1456,20 +1575,36 @@ const DataTable = ({
                                 )}
                             </div>
                             <div className="form-group">
-                                <label>Ghi chú</label>
-                                <input
-                                    type="text"
-                                    placeholder="Nhập ghi chú nếu có..."
-                                    value={newChannelNote}
-                                    onChange={(e) => setNewChannelNote(e.target.value)}
+                                <label>{activeChannelActionConfig.noteLabel}</label>
+                                <textarea
+                                    placeholder={activeChannelActionConfig.notePlaceholder}
+                                    value={channelActionNote}
+                                    onChange={(e) => {
+                                        setChannelActionNote(e.target.value);
+                                        if (noteError) setNoteError('');
+                                    }}
+                                    className={noteError ? 'input-error' : ''}
+                                    required={activeChannelActionConfig.noteRequired}
                                     disabled={isSubmittingChannel}
                                 />
+                                {noteError && (
+                                    <div style={{
+                                        color: '#f43f5e',
+                                        fontSize: '0.75rem',
+                                        marginTop: '0.5rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}>
+                                        <span>⚠️</span> {noteError}
+                                    </div>
+                                )}
                             </div>
                             <div className="modal-footer">
                                 <button
                                     type="button"
                                     className="modal-btn-cancel"
-                                    onClick={() => setIsAddChannelOpen(false)}
+                                    onClick={closeChannelAction}
                                     disabled={isSubmittingChannel}
                                 >
                                     Hủy bỏ
@@ -1477,7 +1612,7 @@ const DataTable = ({
                                 <button
                                     type="submit"
                                     className="modal-btn-confirm"
-                                    disabled={isSubmittingChannel || !newChannelUrl.trim()}
+                                    disabled={isSubmittingChannel || !channelActionUrl.trim()}
                                 >
                                     {isSubmittingChannel ? 'Đang gửi...' : 'Xác nhận'}
                                 </button>
@@ -1494,7 +1629,7 @@ const DataTable = ({
                             <div style={{ fontSize: '4rem', marginBottom: '1.5rem' }}>✅</div>
                             <h2 style={{ marginBottom: '1rem', color: 'var(--text-color)' }}>Đã ghi nhận!</h2>
                             <p style={{ color: 'var(--text-muted)', lineHeight: '1.6', fontSize: '0.95rem' }}>
-                                Cảm ơn bạn! Kênh nguồn đã được ghi nhận vào hệ thống và sẽ được cập nhật sau ít ngày.
+                                {showSuccessModal}
                             </p>
                             <button
                                 className="modal-btn-confirm"
@@ -1504,6 +1639,26 @@ const DataTable = ({
                                 Đóng
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {channelActionError && (
+                <div className="modal-overlay" onClick={() => setChannelActionError('')}>
+                    <div className="modal-container channel-action-error-modal" onClick={e => e.stopPropagation()}>
+                        <div className="channel-action-error-icon">
+                            <AlertTriangle size={34} />
+                        </div>
+                        <h2>Không thể gửi yêu cầu</h2>
+                        <p>{channelActionError}</p>
+                        <button
+                            type="button"
+                            className="modal-btn-confirm danger"
+                            style={{ marginTop: '2rem', width: '100%' }}
+                            onClick={() => setChannelActionError('')}
+                        >
+                            Đóng
+                        </button>
                     </div>
                 </div>
             )}
