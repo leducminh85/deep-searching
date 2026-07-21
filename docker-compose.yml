@@ -36,14 +36,16 @@ services:
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      ADMIN_CRON_TOKEN: ${ADMIN_CRON_TOKEN:?Set ADMIN_CRON_TOKEN in .env}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:?Set YOUTUBE_API_KEY in .env}
       # Ollama runs on the host machine; containers must use host.docker.internal instead of localhost.
       OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
       COOKIES_FILE: ${COOKIES_FILE:-/app/data/cookies.txt}
       COOKIES_FILE_2: ${COOKIES_FILE_2:-/app/data/cookies2.txt}
-      DB_ANALYSIS_MAX_WORKERS: ${DB_ANALYSIS_MAX_WORKERS:-1}
-      DB_ANALYSIS_MIN_DELAY_SECONDS: ${DB_ANALYSIS_MIN_DELAY_SECONDS:-8}
-      DB_ANALYSIS_MAX_DELAY_SECONDS: ${DB_ANALYSIS_MAX_DELAY_SECONDS:-16}
+      DAILY_CHANNEL_SYNC_CONCURRENCY: ${DAILY_CHANNEL_SYNC_CONCURRENCY:-4}
+      DB_ANALYSIS_MAX_WORKERS: ${DB_ANALYSIS_MAX_WORKERS:-2}
+      DB_ANALYSIS_MIN_DELAY_SECONDS: ${DB_ANALYSIS_MIN_DELAY_SECONDS:-0}
+      DB_ANALYSIS_MAX_DELAY_SECONDS: ${DB_ANALYSIS_MAX_DELAY_SECONDS:-0}
       # Local PostgreSQL (Video Data)
       LOCAL_DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_APP_DB:-deep_searching}
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/google-credentials.json
@@ -64,6 +66,18 @@ services:
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - nextjs
+
+  daily-update-cron:
+    build:
+      context: ./docker/daily-update-cron
+    container_name: deep-searching-daily-cron
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Bangkok
+      UPDATE_URL: http://nextjs:3000/api/admin/daily-update/cron
+      ADMIN_CRON_TOKEN: ${ADMIN_CRON_TOKEN:?Set ADMIN_CRON_TOKEN in .env}
     depends_on:
       - nextjs
       

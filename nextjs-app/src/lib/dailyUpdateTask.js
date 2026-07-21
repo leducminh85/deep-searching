@@ -7,7 +7,7 @@ import { syncChannelVideos } from './youtubeChannelSync';
 const MAX_LOGS = 1200;
 const DEFAULT_ANALYSIS_LIMIT = 10000;
 const DEFAULT_ANALYSIS_BATCH_SIZE = 100;
-const DEFAULT_CHANNEL_SYNC_CONCURRENCY = 3;
+const DEFAULT_CHANNEL_SYNC_CONCURRENCY = 4;
 
 function createInitialState() {
     return {

@@ -13,9 +13,9 @@ MODEL = os.getenv("V3_OLLAMA_MODEL") or os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 ANALYSIS_VERSION = "v3-qwen2.5-7b-detailed"
 MIN_SUMMARY_WORDS = int(os.getenv("V3_MIN_SUMMARY_WORDS", "180"))
 MAX_AI_RETRIES = int(os.getenv("DB_ANALYSIS_MAX_AI_RETRIES", "3"))
-MAX_WORKERS = int(os.getenv("DB_ANALYSIS_MAX_WORKERS", "4"))
-MIN_DELAY_SECONDS = float(os.getenv("DB_ANALYSIS_MIN_DELAY_SECONDS", "3"))
-MAX_DELAY_SECONDS = float(os.getenv("DB_ANALYSIS_MAX_DELAY_SECONDS", "7"))
+MAX_WORKERS = int(os.getenv("DB_ANALYSIS_MAX_WORKERS", "2"))
+MIN_DELAY_SECONDS = float(os.getenv("DB_ANALYSIS_MIN_DELAY_SECONDS", "0"))
+MAX_DELAY_SECONDS = float(os.getenv("DB_ANALYSIS_MAX_DELAY_SECONDS", "0"))
 
 
 def configure_console_encoding():
