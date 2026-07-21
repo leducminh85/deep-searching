@@ -152,7 +152,7 @@ async function getAnalysisBatch(seenIds, size) {
               OR upper(btrim(summary)) IN ('ERROR', 'ERROR_AI', 'ABORTED', 'IP_BLOCKED')
               OR upper(btrim(summary)) LIKE 'ERROR:%'
           )
-        ORDER BY created_at ASC, id ASC
+        ORDER BY id DESC
         LIMIT $2
     `, [seen, size]);
 
@@ -289,6 +289,12 @@ async function runAnalysisWorkerBatch(batch) {
     if (stdoutBuffer.trim()) parseWorkerLine(stdoutBuffer, context);
     if (stderrBuffer.trim()) addLog('danger', stderrBuffer.trim());
     await context.updateChain;
+
+    if (exitCode === 2) {
+        throw new Error(
+            'YouTube đang chặn tải caption (IP_BLOCKED/429). Hãy thêm cookies.txt vào nextjs-app/data, giảm DB_ANALYSIS_MAX_WORKERS, hoặc thử lại sau khi IP hết bị giới hạn.'
+        );
+    }
 
     if (exitCode !== 0) {
         throw new Error(`Python analysis worker exited with code ${exitCode}`);

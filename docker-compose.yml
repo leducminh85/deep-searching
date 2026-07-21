@@ -37,12 +37,21 @@ services:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:?Set YOUTUBE_API_KEY in .env}
+      # Ollama runs on the host machine; containers must use host.docker.internal instead of localhost.
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      COOKIES_FILE: ${COOKIES_FILE:-/app/data/cookies.txt}
+      COOKIES_FILE_2: ${COOKIES_FILE_2:-/app/data/cookies2.txt}
+      DB_ANALYSIS_MAX_WORKERS: ${DB_ANALYSIS_MAX_WORKERS:-1}
+      DB_ANALYSIS_MIN_DELAY_SECONDS: ${DB_ANALYSIS_MIN_DELAY_SECONDS:-8}
+      DB_ANALYSIS_MAX_DELAY_SECONDS: ${DB_ANALYSIS_MAX_DELAY_SECONDS:-16}
       # Local PostgreSQL (Video Data)
       LOCAL_DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_APP_DB:-deep_searching}
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/google-credentials.json
     depends_on:
       postgres:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./nextjs-app/data:/app/data
       - ${GOOGLE_CREDENTIALS_HOST_PATH:?Set GOOGLE_CREDENTIALS_HOST_PATH in .env}:/run/secrets/google-credentials.json:ro
