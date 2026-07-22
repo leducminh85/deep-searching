@@ -202,12 +202,53 @@ function getPythonCommand() {
     return process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
 }
 
-function parseWorkerLine(line, context) {
-    const trimmed = line.trim();
-    if (!trimmed) return;
+function parseJsonPrefix(text) {
+    const source = String(text || '').trimStart();
+    if (!source.startsWith('{')) {
+        throw new Error('Worker record does not start with JSON');
+    }
 
-    if (trimmed.startsWith('RESULT\t')) {
-        const payload = JSON.parse(trimmed.slice('RESULT\t'.length));
+    let inString = false;
+    let escaped = false;
+    let depth = 0;
+
+    for (let index = 0; index < source.length; index += 1) {
+        const char = source[index];
+
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+
+        if (char === '\\' && inString) {
+            escaped = true;
+            continue;
+        }
+
+        if (char === '"') {
+            inString = !inString;
+            continue;
+        }
+
+        if (inString) continue;
+
+        if (char === '{') depth += 1;
+        if (char === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return {
+                    payload: JSON.parse(source.slice(0, index + 1)),
+                    rest: source.slice(index + 1),
+                };
+            }
+        }
+    }
+
+    throw new Error('Incomplete worker JSON record');
+}
+
+function handleWorkerRecord(kind, payload, context) {
+    if (kind === 'RESULT') {
         context.updateChain = context.updateChain
             .then(() => updateVideoAnalysis(payload))
             .then(() => {
@@ -225,13 +266,34 @@ function parseWorkerLine(line, context) {
         return;
     }
 
-    if (trimmed.startsWith('LOG\t')) {
-        const payload = JSON.parse(trimmed.slice('LOG\t'.length));
+    if (kind === 'LOG') {
         addLog(payload.level || 'info', payload.message || '');
-        return;
     }
+}
 
-    addLog('info', trimmed);
+function parseWorkerLine(line, context) {
+    let remaining = String(line || '').trim();
+    if (!remaining) return;
+
+    while (remaining) {
+        const match = remaining.match(/^(RESULT|LOG)\t/);
+        if (!match) {
+            const nextTag = remaining.search(/(?:RESULT|LOG)\t/);
+            if (nextTag === -1) {
+                addLog('info', remaining);
+                return;
+            }
+
+            const prefix = remaining.slice(0, nextTag).trim();
+            if (prefix) addLog('info', prefix);
+            remaining = remaining.slice(nextTag);
+            continue;
+        }
+
+        const parsed = parseJsonPrefix(remaining.slice(match[0].length));
+        handleWorkerRecord(match[1], parsed.payload, context);
+        remaining = parsed.rest.trim();
+    }
 }
 
 async function runAnalysisWorkerBatch(batch) {
