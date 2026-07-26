@@ -78,9 +78,9 @@ function StatusIcon({ status, onClick }) {
     );
 }
 
-export default function AdminPage() {
-    const [authenticated, setAuthenticated] = useState(false);
-    const [checkingSession, setCheckingSession] = useState(true);
+export default function AdminPage({ embedded = false }) {
+    const [authenticated, setAuthenticated] = useState(Boolean(embedded));
+    const [checkingSession, setCheckingSession] = useState(!embedded);
     const [password, setPassword] = useState('');
     const [authError, setAuthError] = useState('');
     const [channels, setChannels] = useState([]);
@@ -171,7 +171,7 @@ export default function AdminPage() {
         try {
             const response = await fetch('/api/admin/channels');
             if (response.status === 401) {
-                setAuthenticated(false);
+                if (!embedded) setAuthenticated(false);
                 return;
             }
             const payload = await response.json();
@@ -207,6 +207,13 @@ export default function AdminPage() {
     };
 
     useEffect(() => {
+        if (embedded) {
+            setAuthenticated(true);
+            setCheckingSession(false);
+            loadChannels();
+            return undefined;
+        }
+
         let active = true;
         fetch('/api/admin/session')
             .then((res) => res.json())
@@ -237,7 +244,7 @@ export default function AdminPage() {
         try {
             const response = await fetch('/api/admin/daily-update');
             if (response.status === 401) {
-                setAuthenticated(false);
+                if (!embedded) setAuthenticated(false);
                 return;
             }
             const payload = await response.json();

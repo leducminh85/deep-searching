@@ -6,9 +6,9 @@ const COOKIE_NAME = 'wevic_admin';
 const TOKEN_TTL_SECONDS = 12 * 60 * 60;
 
 function getSecret() {
-    const secret = process.env.ADMIN_PASSWORD;
+    const secret = process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_PASSWORD;
     if (!secret) {
-        throw new Error('ADMIN_PASSWORD is not configured');
+        throw new Error('ADMIN_SESSION_SECRET or ADMIN_PASSWORD is not configured');
     }
     return secret;
 }
@@ -79,6 +79,7 @@ export function clearAdminCookie(response) {
 }
 
 export function verifyAdminPassword(password) {
-    const expected = getSecret();
+    const expected = process.env.ADMIN_PASSWORD;
+    if (!expected) return false;
     return typeof password === 'string' && password.length > 0 && safeEqual(password, expected);
 }
