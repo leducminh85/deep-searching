@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import AdminPage from '../../components/AdminPage';
 
 export default function AdminIndexPage() {
-    redirect('/admin/channels');
+    return <AdminPage embedded />;
 }

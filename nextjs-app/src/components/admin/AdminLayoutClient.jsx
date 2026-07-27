@@ -160,7 +160,9 @@ export default function AdminLayoutClient({ children }) {
                     <div className="admin-sidebar-section">Điều hướng</div>
                     <nav className="admin-sidebar-nav" aria-label="Điều hướng quản trị">
                         {NAV_ITEMS.map(({ href, label, description, icon: Icon }) => {
-                            const active = pathname?.startsWith(href);
+                            const active = pathname === '/admin'
+                                ? href === '/admin/channels'
+                                : pathname?.startsWith(href);
                             return (
                                 <Link key={href} href={href} className={active ? 'active' : ''}>
                                     <Icon size={19} />
