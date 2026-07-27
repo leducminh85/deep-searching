@@ -838,7 +838,7 @@ const DataTable = ({
             if (index !== groupIndex) return group;
             const exists = group.terms.some(item => item.toLowerCase() === term.toLowerCase());
             return exists ? group : { ...group, terms: [...group.terms, term] };
-        }), true);
+        }));
         setAiTermInputs(prev => ({ ...prev, [groupIndex]: '' }));
     };
 
@@ -849,7 +849,7 @@ const DataTable = ({
                 ...group,
                 terms: group.terms.filter((_, indexTerm) => indexTerm !== termIndex),
             };
-        }), true);
+        }));
     };
 
     const handleRunAiSearch = () => {
