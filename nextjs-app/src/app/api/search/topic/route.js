@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '../../../../utils/supabase/server';
-import { getTopSearchLexemes, normalizeAdvancedSearchPlan } from '../../../../lib/localDb';
+import {
+    DOMAIN_GENERIC_SEARCH_TERMS,
+    filterDomainGenericTermsFromPlan,
+    getTopSearchLexemes,
+    normalizeAdvancedSearchPlan,
+} from '../../../../lib/localDb';
 import {
     compactText,
     detectExplicitKeywordList,
@@ -10,11 +15,14 @@ import {
 
 const DEFAULT_MODEL = 'qwen2.5:7b';
 const MAX_TOPIC_LENGTH = 240;
-const GENERIC_WORDS = new Set([
+const BASE_GENERIC_SEARCH_TERMS = [
     'cac', 'nhung', 'mot', 'vung', 'viec', 'vu', 'bi', 'o', 'tai', 'trong', 'ngoai', 'cua', 'va', 'hoac', 'la', 'co', 'khong',
     'video', 'clip', 'story', 'stories', 'incident', 'incidents', 'case', 'cases', 'event', 'events', 'viral', 'public',
     'compilation', 'caught', 'camera', 'footage', 'people', 'person', 'thing', 'things',
-]);
+];
+const GENERIC_WORDS = new Set([...BASE_GENERIC_SEARCH_TERMS, ...DOMAIN_GENERIC_SEARCH_TERMS]);
+const BASE_GENERIC_TERMS_TEXT = BASE_GENERIC_SEARCH_TERMS.join(', ');
+const DOMAIN_GENERIC_TERMS_TEXT = DOMAIN_GENERIC_SEARCH_TERMS.join(', ');
 
 function repairJsonCandidate(value) {
     return String(value || '')
@@ -71,6 +79,19 @@ function formatDisplayQuery(plan) {
 
     const rootJoiner = plan.rootOperator === 'OR' ? ' OR ' : ' AND ';
     return groupText.join(rootJoiner);
+}
+
+function applyDomainGenericFilter(plan, metadata = {}) {
+    const filtered = filterDomainGenericTermsFromPlan(plan);
+    return {
+        plan: filtered.plan,
+        metadata: {
+            ...metadata,
+            domain_generic_terms: DOMAIN_GENERIC_SEARCH_TERMS,
+            domain_generic_dropped_terms: filtered.droppedTerms,
+            domain_generic_dropped_facets: filtered.droppedFacets,
+        },
+    };
 }
 
 function fallbackPlan(topic, listInfo = { explicit: false, terms: [] }) {
@@ -209,18 +230,19 @@ async function generatePlanWithOllama(topic, corpusHints = [], listInfo = { expl
                             'Keep only key nouns, named phrases, locations, objects, roles, and concrete actions.',
                             'Terms must be 1 or 2 words. Keep exact 2-word entities like "sovereign citizen".',
                             'Use normal spaces in multi-word terms, not underscores, slashes, or camelCase.',
-                            'Avoid generic words: video, viral, incident, case, story, public, compilation, caught on camera, people.',
+                            `Avoid generic words: ${BASE_GENERIC_TERMS_TEXT}.`,
+                            `Also avoid corpus-specific generic terms for this dataset: ${DOMAIN_GENERIC_TERMS_TEXT}. These are not universal stopwords; they are weak only because this project corpus is mostly police bodycam arrest footage, so these terms appear in nearly every video and do not filter meaningfully here.`,
                             'Do not add weak abstract terms.',
                             'Prefer terms that are likely to exist in the project corpus. The corpus uses PostgreSQL simple full-text search, so there is no stemming, no synonym expansion, and no accent folding.',
                             'If the input is Vietnamese, include Vietnamese terms in both accented and unaccented forms when they are core keywords, plus English equivalents only when they are likely searchable.',
                             explicitInstruction,
                             hintText ? `High-frequency corpus lexemes for reference: ${hintText}.` : '',
                             'Example topic "karen gây rối ở sân bay": {"rootOperator":"AND","groups":[{"operator":"OR","terms":["airport","airplane","flight","passenger"],"sourceTerms":["sân bay"],"relation":"same_concept","confidence":0.9},{"operator":"OR","terms":["karen","woman","girl"],"sourceTerms":["karen"],"relation":"same_concept","confidence":0.85}]}',
-                            'Example topic "sovereign citizen bị bắt": {"rootOperator":"AND","groups":[{"operator":"OR","terms":["sovereign citizen","sovereign","freeman"],"sourceTerms":["sovereign citizen"],"relation":"same_concept","confidence":0.9},{"operator":"OR","terms":["arrested","arrest","police","detained"],"sourceTerms":["bị bắt"],"relation":"same_concept","confidence":0.82}]}',
+                            'Example topic "sovereign citizen bị bắt": {"rootOperator":"AND","groups":[{"operator":"OR","terms":["sovereign citizen","sovereign","freeman"],"sourceTerms":["sovereign citizen"],"relation":"same_concept","confidence":0.9}]}',
                             'Example explicit keyword list "driver, drunk, taser": {"rootOperator":"AND","groups":[{"operator":"OR","terms":["driver","motorist"],"sourceTerms":["driver"],"relation":"same_concept","confidence":0.9},{"operator":"OR","terms":["drunk","intoxicated","alcohol"],"sourceTerms":["drunk"],"relation":"same_concept","confidence":0.9},{"operator":"OR","terms":["taser","electroshock","tased"],"sourceTerms":["taser"],"relation":"same_concept","confidence":0.9}]}',
                             'Example topic "man drunk taser": {"rootOperator":"AND","groups":[{"operator":"OR","terms":["man","male"],"sourceTerms":["man"],"relation":"same_concept","confidence":0.85},{"operator":"OR","terms":["drunk","intoxicated","alcohol"],"sourceTerms":["drunk"],"relation":"same_concept","confidence":0.9},{"operator":"OR","terms":["taser","tased"],"sourceTerms":["taser"],"relation":"same_concept","confidence":0.9}]}',
                             'Example topic "airport karen woman": {"rootOperator":"AND","groups":[{"operator":"OR","terms":["airport","airplane","flight","passenger"],"sourceTerms":["airport"],"relation":"same_concept","confidence":0.9},{"operator":"OR","terms":["karen","woman","girl"],"sourceTerms":["karen","woman"],"relation":"same_role_alternatives","confidence":0.85}]}',
-                            'Example explicit keyword list "cop, police, officer": {"rootOperator":"AND","groups":[{"operator":"OR","terms":["cop","police","officer"],"sourceTerms":["cop","police","officer"],"relation":"same_concept","confidence":0.9}]}',
+                            'Example explicit keyword list "attorney, lawyer, counsel": {"rootOperator":"AND","groups":[{"operator":"OR","terms":["attorney","lawyer","counsel"],"sourceTerms":["attorney","lawyer","counsel"],"relation":"same_concept","confidence":0.9}]}',
                             'No explanations, no markdown.',
                         ].join(' '),
                     },
@@ -242,13 +264,14 @@ async function generatePlanWithOllama(topic, corpusHints = [], listInfo = { expl
         const processed = listInfo.explicit
             ? postProcessExplicitKeywordPlan(parsed, listInfo.terms)
             : { plan: normalizeAdvancedSearchPlan(parsed), metadata: { explicit_keyword_list: false, explicit_terms: [], auto_corrected_groups: [] } };
-        const plan = processed.plan;
+        const filtered = applyDomainGenericFilter(processed.plan, processed.metadata);
+        const plan = filtered.plan;
 
         if (!plan) {
             throw new Error('AI không tạo được nhóm từ khóa hợp lệ.');
         }
 
-        return { plan, model, planMetadata: processed.metadata };
+        return { plan, model, planMetadata: filtered.metadata };
     } finally {
         clearTimeout(timer);
     }
@@ -287,15 +310,19 @@ export async function POST(request) {
             if (!plan) {
                 throw error;
             }
+            const filtered = applyDomainGenericFilter(plan, {
+                explicit_keyword_list: listInfo.explicit,
+                explicit_terms: listInfo.terms,
+                auto_corrected_groups: [],
+                fallback_used: true,
+            });
+            if (!filtered.plan) {
+                throw error;
+            }
             generated = {
-                plan,
+                plan: filtered.plan,
                 model: null,
-                planMetadata: {
-                    explicit_keyword_list: listInfo.explicit,
-                    explicit_terms: listInfo.terms,
-                    auto_corrected_groups: [],
-                    fallback_used: true,
-                },
+                planMetadata: filtered.metadata,
                 warning: formatFallbackWarning(error),
             };
         }

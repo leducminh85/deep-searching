@@ -5,6 +5,7 @@ import {
     buildOptionalAdvancedSearchTsQuery,
     buildRelaxedAdvancedSearchTsQuery,
     dropWeakestAdvancedFacet,
+    filterDomainGenericTermsFromPlan,
     validateAdvancedSearchPlanWithCorpus,
 } from '../src/lib/localDb.js';
 
@@ -23,6 +24,11 @@ const corpus = new Map([
     ['arrest', 70],
     ['police', 1000],
     ['detained', 22],
+    ['drunk', 90],
+    ['intoxicated', 45],
+    ['driver', 140],
+    ['motorist', 35],
+    ['body', 30],
     ['sân', 8],
     ['bay', 9],
     ['san', 11],
@@ -81,6 +87,61 @@ assert.deepEqual(validated.plan.groups, [
 ]);
 assert.equal(validated.unmatchedFacets.length, 1);
 assert.deepEqual(validated.unmatchedFacets[0].terms, ['totallymissing', 'alsomissing']);
+
+const domainGenericFiltered = validateAdvancedSearchPlanWithCorpus({
+    rootOperator: 'AND',
+    groups: [
+        { operator: 'OR', terms: ['police', 'officer', 'arrest', 'arrested'] },
+        { operator: 'OR', terms: ['drunk', 'intoxicated'] },
+        { operator: 'OR', terms: ['driver', 'motorist'] },
+    ],
+}, corpus);
+
+assert.deepEqual(domainGenericFiltered.plan.groups, [
+    { operator: 'OR', terms: ['drunk', 'intoxicated'] },
+    { operator: 'OR', terms: ['driver', 'motorist'] },
+]);
+assert.equal(
+    domainGenericFiltered.droppedTerms.some(item => item.term === 'police' && item.reason === 'domain_generic'),
+    true
+);
+assert.equal(
+    domainGenericFiltered.droppedTerms.some(item => item.term === 'officer' && item.reason === 'domain_generic'),
+    true
+);
+assert.equal(
+    domainGenericFiltered.droppedTerms.some(item => item.term === 'arrest' && item.reason === 'domain_generic'),
+    true
+);
+assert.equal(domainGenericFiltered.unmatchedFacets.length, 1);
+
+const topicRouteFiltered = filterDomainGenericTermsFromPlan({
+    rootOperator: 'AND',
+    groups: [
+        { operator: 'OR', terms: ['police', 'officer', 'bodycam', 'arrest', 'detained'] },
+        { operator: 'OR', terms: ['drunk', 'intoxicated'] },
+        { operator: 'OR', terms: ['driver', 'motorist'] },
+    ],
+});
+
+assert.deepEqual(topicRouteFiltered.plan.groups, [
+    { operator: 'OR', terms: ['drunk', 'intoxicated'] },
+    { operator: 'OR', terms: ['driver', 'motorist'] },
+]);
+assert.equal(topicRouteFiltered.droppedTerms.some(item => item.term === 'bodycam'), true);
+
+const bodyTermFiltered = filterDomainGenericTermsFromPlan({
+    rootOperator: 'AND',
+    groups: [
+        { operator: 'OR', terms: ['body'] },
+        { operator: 'OR', terms: ['body camera'] },
+    ],
+});
+
+assert.deepEqual(bodyTermFiltered.plan.groups, [
+    { operator: 'OR', terms: ['body'] },
+]);
+assert.equal(bodyTermFiltered.droppedTerms.some(item => item.term === 'body camera'), true);
 
 const accented = validateAdvancedSearchPlanWithCorpus({
     rootOperator: 'AND',

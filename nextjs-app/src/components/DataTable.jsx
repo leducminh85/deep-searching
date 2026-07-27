@@ -115,6 +115,212 @@ const Highlight = ({ text, searches, enabled }) => {
     );
 };
 
+const normalizeEditablePlan = (plan) => {
+    const groups = Array.isArray(plan?.groups)
+        ? plan.groups
+            .map(group => ({
+                operator: group?.operator === 'AND' ? 'AND' : 'OR',
+                terms: Array.isArray(group?.terms)
+                    ? group.terms
+                        .map(term => String(term || '').trim())
+                        .filter(Boolean)
+                        .filter((term, index, arr) => arr.findIndex(item => item.toLowerCase() === term.toLowerCase()) === index)
+                    : [],
+            }))
+            .filter(group => group.terms.length > 0)
+        : [];
+
+    if (groups.length === 0) return null;
+    return {
+        rootOperator: plan?.rootOperator === 'OR' ? 'OR' : 'AND',
+        groups,
+    };
+};
+
+const getPlanTerms = (plan) => {
+    const normalized = normalizeEditablePlan(plan);
+    if (!normalized) return [];
+    return normalized.groups
+        .flatMap(group => group.terms)
+        .filter((term, index, arr) => arr.findIndex(item => item.toLowerCase() === term.toLowerCase()) === index);
+};
+
+const formatPlanReadable = (plan) => {
+    const normalized = normalizeEditablePlan(plan);
+    if (!normalized) return '';
+
+    return normalized.groups
+        .map(group => {
+            const joiner = group.operator === 'AND' ? ' và ' : ' hoặc ';
+            return `(${group.terms.join(joiner)})`;
+        })
+        .join(normalized.rootOperator === 'OR' ? ' HOẶC ' : ' VÀ ');
+};
+
+const clonePlan = (plan) => {
+    const normalized = normalizeEditablePlan(plan);
+    return normalized ? JSON.parse(JSON.stringify(normalized)) : null;
+};
+
+const getMetadataDroppedTerms = (...metas) => {
+    const terms = [];
+    metas.filter(Boolean).forEach(meta => {
+        [
+            meta.dropped_terms,
+            meta.droppedTerms,
+            meta.domain_generic_dropped_terms,
+            meta.domainGenericDroppedTerms,
+        ].forEach(list => {
+            if (!Array.isArray(list)) return;
+            list.forEach(item => {
+                if (typeof item === 'string') {
+                    terms.push({ term: item, reason: '' });
+                } else if (item?.term) {
+                    terms.push({ term: item.term, reason: item.reason || '' });
+                }
+            });
+        });
+    });
+
+    return terms.filter((item, index, arr) =>
+        arr.findIndex(other => String(other.term).toLowerCase() === String(item.term).toLowerCase()) === index
+    );
+};
+
+const getMetadataDroppedFacets = (...metas) => {
+    const facets = [];
+    metas.filter(Boolean).forEach(meta => {
+        [meta.dropped_facets, meta.droppedFacets, meta.unmatched_facets, meta.unmatchedFacets, meta.domain_generic_dropped_facets].forEach(list => {
+            if (!Array.isArray(list)) return;
+            list.forEach(item => {
+                if (Array.isArray(item?.terms) && item.terms.length > 0) {
+                    facets.push({
+                        terms: item.terms,
+                        reason: item.reason || '',
+                    });
+                }
+            });
+        });
+    });
+
+    return facets;
+};
+
+const AiTopicSearchPanelCompact = ({
+    topic,
+    onTopicChange,
+    onGenerate,
+    loading,
+    slow,
+    error,
+    onRetry,
+    editablePlan,
+    termInputs,
+    onTermInputChange,
+    onAddTerm,
+    onRemoveTerm,
+    onRunSearch,
+}) => {
+    const hasEditablePlan = Boolean(editablePlan?.groups?.length) && !loading;
+
+    return (
+        <div className="ai-search-panel">
+            <div className="ai-topic-input-row">
+                <textarea
+                    className="ai-topic-textarea"
+                    value={topic}
+                    onChange={(event) => onTopicChange(event.target.value)}
+                    placeholder="Nhập chủ đề. Ví dụ: Karen gets arrested in airport"
+                    rows={3}
+                    aria-label="Chủ đề tìm kiếm AI"
+                />
+                <div className="ai-topic-actions">
+                    <button
+                        type="button"
+                        className="ai-generate-button"
+                        onClick={onGenerate}
+                        disabled={loading || !topic.trim()}
+                    >
+                        <Sparkles size={16} />
+                        <span>{loading ? 'Thinking...' : 'Tìm kiếm'}</span>
+                    </button>
+                    {error && (
+                        <button type="button" className="ai-retry-button" onClick={onRetry} disabled={loading}>
+                            Thử lại
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {loading && (
+                <div className="ai-plan-loading">
+                    <Sparkles size={18} />
+                    <div>
+                        <strong>{slow ? 'Vẫn đang xử lý...' : 'Đang phân tích chủ đề...'}</strong>
+                        <span>{slow ? 'AI thinking' : 'AI đang tạo bộ từ khóa và tìm kiếm.'}</span>
+                    </div>
+                </div>
+            )}
+
+            {error && !loading && (
+                <div className="ai-plan-error">
+                    <AlertTriangle size={16} />
+                    <span>{error}</span>
+                </div>
+            )}
+
+            {hasEditablePlan && (
+                <div className="ai-plan-preview compact">
+                    <div className="ai-plan-preview-header">
+                        <div>
+                            <strong>Từ khoá gợi ý</strong>
+                        </div>
+                    </div>
+
+                    <div className="ai-query-chip-row">
+                        {editablePlan.groups.map((group, groupIndex) => (
+                            <React.Fragment key={`ai-compact-group-${groupIndex}`}>
+                                {groupIndex > 0 && <span className="ai-query-joiner">và</span>}
+                                <span className={`ai-query-group color-${groupIndex % 5}`}>
+                                    {group.terms.map((term, termIndex) => (
+                                        <React.Fragment key={`${groupIndex}-${term}-${termIndex}`}>
+                                            {termIndex > 0 && <span className="ai-query-or">hoặc</span>}
+                                            <span className="ai-term-chip">
+                                                {term}
+                                                <button type="button" onClick={() => onRemoveTerm(groupIndex, termIndex)} title="Xóa từ">
+                                                    ×
+                                                </button>
+                                            </span>
+                                        </React.Fragment>
+                                    ))}
+                                    <form className="ai-add-term" onSubmit={(event) => {
+                                        event.preventDefault();
+                                        onAddTerm(groupIndex);
+                                    }}>
+                                        <input
+                                            type="text"
+                                            value={termInputs[groupIndex] || ''}
+                                            onChange={(event) => onTermInputChange(groupIndex, event.target.value)}
+                                            placeholder="Thêm từ"
+                                        />
+                                    </form>
+                                </span>
+                            </React.Fragment>
+                        ))}
+                    </div>
+
+                    <div className="ai-plan-footer">
+                        <button type="button" className="ai-run-search-button" onClick={onRunSearch}>
+                            <Search size={16} />
+                            <span>Tìm lại</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const DataTable = ({
     highlightEnabled,
     searchMode,
@@ -140,8 +346,16 @@ const DataTable = ({
     const [searchTags, setSearchTags] = useState([]);
     const [appliedTags, setAppliedTags] = useState([]);
     const [appliedAdvancedSearch, setAppliedAdvancedSearch] = useState(null);
+    const [activeSearchTab, setActiveSearchTab] = useState('keyword');
+    const [aiTopicInput, setAiTopicInput] = useState('');
+    const [aiEditablePlan, setAiEditablePlan] = useState(null);
+    const [aiTopicMeta, setAiTopicMeta] = useState(null);
+    const [aiTopicWarning, setAiTopicWarning] = useState('');
     const [aiTopicLoading, setAiTopicLoading] = useState(false);
+    const [aiTopicSlow, setAiTopicSlow] = useState(false);
     const [aiTopicError, setAiTopicError] = useState('');
+    const [aiTermInputs, setAiTermInputs] = useState({});
+    const [advancedSearchMeta, setAdvancedSearchMeta] = useState(null);
     const [appliedFilters, setAppliedFilters] = useState({});
     const [isInitialized, setIsInitialized] = useState(true);
     const abortControllerRef = useRef(null);
@@ -211,6 +425,16 @@ const DataTable = ({
             }
         };
     }, []);
+
+    useEffect(() => {
+        if (!aiTopicLoading) {
+            setAiTopicSlow(false);
+            return undefined;
+        }
+
+        const timer = setTimeout(() => setAiTopicSlow(true), 5000);
+        return () => clearTimeout(timer);
+    }, [aiTopicLoading]);
 
     const extractMainStory = (summary) => {
         if (!summary || typeof summary !== 'string') return "";
@@ -443,6 +667,9 @@ const DataTable = ({
 
             setTotalResults(result.total || 0);
             setHasMore(newData.length === pageSize);
+            if (pageNum === 1) {
+                setAdvancedSearchMeta(result.search || null);
+            }
 
             if (pageNum === 1) {
                 if (progressIntervalRef.current) {
@@ -459,6 +686,9 @@ const DataTable = ({
                 progressIntervalRef.current = null;
             }
             setError(`${err.message}`);
+            if (pageNum === 1) {
+                setAdvancedSearchMeta(null);
+            }
         } finally {
             isRequestPendingRef.current = false;
             if (signal.aborted) return;
@@ -484,6 +714,8 @@ const DataTable = ({
         }
         setAppliedTags(newTags);
         setAppliedAdvancedSearch(null);
+        setAdvancedSearchMeta(null);
+        setActiveSearchTab('keyword');
         setAiTopicError('');
         setPage(1);
         // Cancel any pending debounced fetch and in-flight request
@@ -493,8 +725,33 @@ const DataTable = ({
         setSuggestions([]);
     };
 
+    const applyAiSearchPlan = (plan, options = {}) => {
+        const normalizedPlan = clonePlan(plan);
+        if (!normalizedPlan) return false;
+
+        const terms = getPlanTerms(normalizedPlan);
+        const nextWarning = options.warning ?? aiTopicWarning;
+        const nextMeta = options.metadata ?? aiTopicMeta;
+        const nextTopic = options.topic ?? aiTopicInput.trim();
+
+        setAppliedTags([]);
+        setAppliedAdvancedSearch({
+            topic: nextTopic,
+            displayQuery: formatPlanReadable(normalizedPlan),
+            plan: normalizedPlan,
+            warning: nextWarning,
+            metadata: nextMeta,
+            terms,
+        });
+        setActiveSearchTab('ai');
+        setAiTopicError('');
+        setAdvancedSearchMeta(null);
+        setPage(1);
+        return true;
+    };
+
     const handleGenerateTopicSearch = async () => {
-        const topic = (inputValue.trim() || searchTags.join(' ')).trim();
+        const topic = aiTopicInput.trim();
         if (!topic) {
             setAiTopicError('Nhập chủ đề trước khi tạo bộ từ khóa AI.');
             return;
@@ -502,6 +759,8 @@ const DataTable = ({
 
         setAiTopicLoading(true);
         setAiTopicError('');
+        setAiTopicWarning('');
+        setAdvancedSearchMeta(null);
 
         try {
             const response = await fetch(`${API_BASE}/api/search/topic`, {
@@ -515,17 +774,20 @@ const DataTable = ({
                 throw new Error(result.error || 'Không tạo được bộ từ khóa AI.');
             }
 
-            const terms = Array.isArray(result.terms) ? result.terms : [];
-            setSearchTags(terms);
-            setAppliedTags(terms);
-            setAppliedAdvancedSearch({
+            const plan = clonePlan(result.plan);
+            if (!plan) {
+                throw new Error('AI chưa tạo được nhóm từ khóa hợp lệ.');
+            }
+
+            setAiEditablePlan(plan);
+            setAiTopicMeta(result.planMetadata || null);
+            setAiTopicWarning(result.warning || '');
+            setAiTermInputs({});
+            applyAiSearchPlan(plan, {
                 topic: result.topic || topic,
-                displayQuery: result.displayQuery || terms.join(','),
-                plan: result.plan,
                 warning: result.warning || '',
+                metadata: result.planMetadata || null,
             });
-            setInputValue('');
-            setPage(1);
             setShowSuggestions(false);
             setSuggestions([]);
         } catch (err) {
@@ -533,6 +795,78 @@ const DataTable = ({
         } finally {
             setAiTopicLoading(false);
         }
+    };
+
+    const handleSearchTabChange = (tab) => {
+        setActiveSearchTab(tab);
+        setAiTopicError('');
+        setShowSuggestions(false);
+        setSuggestions([]);
+    };
+
+    const updateAiPlanGroups = (updater, applyAfterUpdate = false) => {
+        const current = clonePlan(aiEditablePlan);
+        if (!current) return;
+
+        const nextGroups = updater(current.groups).filter(group => group.terms.length > 0);
+        const nextPlan = normalizeEditablePlan({
+            rootOperator: nextGroups.length > 1 ? 'AND' : 'OR',
+            groups: nextGroups,
+        });
+
+        setAiEditablePlan(nextPlan);
+        if (applyAfterUpdate && appliedAdvancedSearch) {
+            if (nextPlan) {
+                applyAiSearchPlan(nextPlan);
+            } else {
+                setAppliedAdvancedSearch(null);
+                setAdvancedSearchMeta(null);
+                setPage(1);
+            }
+        }
+    };
+
+    const handleAiTermInputChange = (groupIndex, value) => {
+        setAiTermInputs(prev => ({ ...prev, [groupIndex]: value }));
+    };
+
+    const handleAddAiTerm = (groupIndex) => {
+        const term = String(aiTermInputs[groupIndex] || '').trim();
+        if (!term) return;
+
+        updateAiPlanGroups(groups => groups.map((group, index) => {
+            if (index !== groupIndex) return group;
+            const exists = group.terms.some(item => item.toLowerCase() === term.toLowerCase());
+            return exists ? group : { ...group, terms: [...group.terms, term] };
+        }), true);
+        setAiTermInputs(prev => ({ ...prev, [groupIndex]: '' }));
+    };
+
+    const handleRemoveAiTerm = (groupIndex, termIndex) => {
+        updateAiPlanGroups(groups => groups.map((group, index) => {
+            if (index !== groupIndex) return group;
+            return {
+                ...group,
+                terms: group.terms.filter((_, indexTerm) => indexTerm !== termIndex),
+            };
+        }), true);
+    };
+
+    const handleRunAiSearch = () => {
+        const plan = clonePlan(aiEditablePlan);
+        if (!plan) {
+            setAiTopicError('Bộ từ khóa AI đang trống. Hãy tạo hoặc chỉnh lại nhóm từ khóa.');
+            return;
+        }
+
+        applyAiSearchPlan(plan);
+    };
+
+    const handleDisableAdvancedSearch = () => {
+        setAppliedAdvancedSearch(null);
+        setAdvancedSearchMeta(null);
+        setActiveSearchTab('keyword');
+        setPage(1);
     };
 
     const addTag = (val) => {
@@ -753,6 +1087,8 @@ const DataTable = ({
         setAppliedTags([]);
         setSearchTags([]);
         setAppliedAdvancedSearch(null);
+        setAdvancedSearchMeta(null);
+        setActiveSearchTab('keyword');
         setAiTopicError('');
         setPage(1);
         setAppliedFilters({});
@@ -815,6 +1151,10 @@ const DataTable = ({
             'Channel Name'
         ];
     }, []);
+    const activeHighlightTerms = useMemo(
+        () => appliedAdvancedSearch ? (appliedAdvancedSearch.terms || getPlanTerms(appliedAdvancedSearch.plan)) : appliedTags,
+        [appliedAdvancedSearch, appliedTags]
+    );
 
     useEffect(() => {
         // Initial fetch handled by the other useEffect depending on appliedTags
@@ -828,7 +1168,7 @@ const DataTable = ({
 
     // Auto-scroll to first highlight in each cell when searching
     useEffect(() => {
-        if (!highlightEnabled || appliedTags.length === 0 || loading) return;
+        if (!highlightEnabled || activeHighlightTerms.length === 0 || loading) return;
 
         // Use requestAnimationFrame and a slightly longer timeout to ensure DOM is fully rendered and browsers have calculated offsets
         const timer = setTimeout(() => {
@@ -846,7 +1186,7 @@ const DataTable = ({
         }, 300);
 
         return () => clearTimeout(timer);
-    }, [appliedTags, visibleRows, highlightEnabled, loading, data]);
+    }, [activeHighlightTerms, visibleRows, highlightEnabled, loading, data]);
 
     // Infinite scroll effect
     useEffect(() => {
@@ -1093,7 +1433,7 @@ const DataTable = ({
         if (lowerHeader === 'title') {
             return (
                 <div className="title-cell">
-                    <Highlight text={value} searches={appliedTags} enabled={highlightEnabled} />
+                    <Highlight text={value} searches={activeHighlightTerms} enabled={highlightEnabled} />
                     {row.Used && <span className="used-video-badge">Đã dùng</span>}
                 </div>
             );
@@ -1133,12 +1473,12 @@ const DataTable = ({
                     }}
                     onMouseLeave={handleMouseLeaveSummary}
                 >
-                    <Highlight text={value} searches={appliedTags} enabled={highlightEnabled} />
+                    <Highlight text={value} searches={activeHighlightTerms} enabled={highlightEnabled} />
                 </div>
             );
         }
 
-        return <Highlight text={value} searches={appliedTags} enabled={highlightEnabled} />;
+        return <Highlight text={value} searches={activeHighlightTerms} enabled={highlightEnabled} />;
     };
 
     const getHeaderClass = (header) => {
@@ -1263,16 +1603,15 @@ const DataTable = ({
                 </div>
             </div>
 
-            {/* SearchCat rendered outside table-container to avoid overflow:hidden clipping */}
-            {/* SearchCat rendered outside table-container to avoid overflow:hidden clipping */}
-            {/* SearchCat rendered outside table-container to avoid overflow:hidden clipping */}
-            <SearchCat 
-                inputValue={inputValue} 
-                searchTags={searchTags} 
-                knownWords={seenSuggestionsRef.current}
-                anchorRef={searchWrapperRef} 
-                inputRef={searchInputRef} 
-            />
+            {activeSearchTab === 'keyword' && (
+                <SearchCat
+                    inputValue={inputValue}
+                    searchTags={searchTags}
+                    knownWords={seenSuggestionsRef.current}
+                    anchorRef={searchWrapperRef}
+                    inputRef={searchInputRef}
+                />
+            )}
 
             <div className="table-container">
                 {(appliedTags.length > 0 || Object.keys(appliedFilters).some(k => appliedFilters[k] && (Array.isArray(appliedFilters[k]) ? appliedFilters[k].length > 0 : true))) && (
@@ -1314,16 +1653,37 @@ const DataTable = ({
                         )}
                     </div>
                 )}
-                <div className="toolbar" style={{ gap: '1rem', flexWrap: 'wrap' }}>
+                <div className="search-tab-strip" role="tablist" aria-label="Chế độ tìm kiếm">
                     <button
-                        className={`search-mode-inline-button mode-${searchMode} tour-search-mode`}
+                        type="button"
+                        role="tab"
+                        aria-selected={activeSearchTab === 'keyword'}
+                        className={`search-tab-button ${activeSearchTab === 'keyword' ? 'active' : ''}`}
+                        onClick={() => handleSearchTabChange('keyword')}
+                    >
+                        Từ khóa
+                    </button>
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={activeSearchTab === 'ai'}
+                        className={`search-tab-button ${activeSearchTab === 'ai' ? 'active' : ''}`}
+                        onClick={() => handleSearchTabChange('ai')}
+                    >
+                        AI
+                    </button>
+                </div>
+
+                <div className="toolbar search-toolbar" style={{ gap: '1rem', flexWrap: 'wrap' }}>
+                    <button
+                        className={`search-mode-inline-button mode-${searchMode} tour-search-mode ${activeSearchTab !== 'keyword' ? 'is-hidden' : ''}`}
                         onClick={onToggleSearchMode}
                         title={searchMode === 'or' ? 'Chế độ tìm kiếm: Một trong các từ khóa (OR)' : 'Chế độ tìm kiếm: Tất cả từ khóa (AND)'}
                     >
                         {searchMode.toUpperCase()}
                     </button>
 
-                    <div className="search-wrapper" ref={searchWrapperRef} style={{
+                    <div className={`search-wrapper ${activeSearchTab !== 'keyword' ? 'is-hidden' : ''}`} ref={searchWrapperRef} style={{
                         flex: 1,
                         position: 'relative',
                         display: 'flex',
@@ -1412,7 +1772,7 @@ const DataTable = ({
                                                 onClick={() => handleSuggestionSelect(item)}
                                                 onMouseEnter={() => setActiveSuggestionIndex(idx)}
                                             >
-                                                <div className="autocomplete-item-icon">🔍</div>
+                                                <div className="autocomplete-item-icon"><Search size={14} /></div>
                                                 <span className="autocomplete-item-text">
                                                     {textContent}
                                                 </span>
@@ -1443,16 +1803,6 @@ const DataTable = ({
                                 nhấn , hoặc Enter ↵
                             </span>
                             <button
-                                type="button"
-                                className="ai-topic-button"
-                                onClick={handleGenerateTopicSearch}
-                                disabled={aiTopicLoading}
-                                title="AI tạo bộ từ khóa nâng cao từ chủ đề đang nhập"
-                            >
-                                <Sparkles size={16} />
-                                <span>{aiTopicLoading ? 'Đang tạo' : 'AI chủ đề'}</span>
-                            </button>
-                            <button
                                 onClick={handleSearch}
                                 style={{
                                     background: 'var(--primary-color)',
@@ -1471,6 +1821,24 @@ const DataTable = ({
                             </button>
                         </div>
                     </div>
+
+                    {activeSearchTab === 'ai' && (
+                        <AiTopicSearchPanelCompact
+                            topic={aiTopicInput}
+                            onTopicChange={setAiTopicInput}
+                            onGenerate={handleGenerateTopicSearch}
+                            loading={aiTopicLoading}
+                            slow={aiTopicSlow}
+                            error={aiTopicError}
+                            onRetry={handleGenerateTopicSearch}
+                            editablePlan={aiEditablePlan}
+                            termInputs={aiTermInputs}
+                            onTermInputChange={handleAiTermInputChange}
+                            onAddTerm={handleAddAiTerm}
+                            onRemoveTerm={handleRemoveAiTerm}
+                            onRunSearch={handleRunAiSearch}
+                        />
+                    )}
 
                     <button
                         onClick={toggleFilter}
@@ -1492,35 +1860,58 @@ const DataTable = ({
                     </span>
                 </div>
 
-                {(appliedAdvancedSearch || aiTopicError) && (
-                    <div className={`advanced-search-summary ${aiTopicError ? 'error' : ''}`}>
-                        <Sparkles size={16} />
-                        {aiTopicError ? (
-                            <span>{aiTopicError}</span>
-                        ) : (
-                            <>
-                                <div>
-                                    <strong>Tìm nâng cao bằng AI</strong>
-                                    <span>{appliedAdvancedSearch.displayQuery}</span>
-                                    {appliedAdvancedSearch.warning && (
-                                        <em>{appliedAdvancedSearch.warning}</em>
-                                    )}
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setAppliedAdvancedSearch(null);
-                                        setAiTopicError('');
-                                        setPage(1);
-                                    }}
-                                >
-                                    Tắt
-                                </button>
-                            </>
-                        )}
+                {loading && (
+                    <div className="table-wrapper video-table-skeleton-wrap" aria-busy="true">
+                        <table>
+                            <thead>
+                                <tr>
+                                    {headers.map(header => (
+                                        <th
+                                            key={header}
+                                            className={getHeaderClass(header)}
+                                            style={columnWidths[header] ? { width: `${columnWidths[header]}px`, minWidth: 'auto', maxWidth: 'none' } : {}}
+                                        >
+                                            <div className="th-content" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <span style={{ flex: 1 }}>{getTranslation(header)}</span>
+                                            </div>
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {Array.from({ length: Math.min(10, pageSize) }).map((_, rowIndex) => (
+                                    <tr key={`video-skeleton-${rowIndex}`} className="video-skeleton-row">
+                                        {headers.map(header => {
+                                            const lowerHeader = header.toLowerCase();
+                                            return (
+                                                <td key={header} className={getHeaderClass(header)}>
+                                                    <div className={`video-skeleton-cell ${getHeaderClass(header)}`}>
+                                                        {lowerHeader === 'thumbnail' ? (
+                                                            <span className="video-skeleton-thumb" />
+                                                        ) : lowerHeader === 'title' ? (
+                                                            <>
+                                                                <span className="video-skeleton-line wide" />
+                                                                <span className="video-skeleton-line short" />
+                                                            </>
+                                                        ) : lowerHeader === 'summary' ? (
+                                                            <>
+                                                                <span className="video-skeleton-line wide" />
+                                                                <span className="video-skeleton-line medium" />
+                                                                <span className="video-skeleton-line short" />
+                                                            </>
+                                                        ) : (
+                                                            <span className="video-skeleton-line medium" />
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 )}
-
 
                 {loading && (
                     <div className="empty-state">

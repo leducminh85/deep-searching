@@ -176,6 +176,24 @@ const BROAD_FACET_THRESHOLD_RATIO = 0.25;
 const BROAD_FACET_WEIGHT = 0.4;
 const lexemeCache = new Map();
 
+export const DOMAIN_GENERIC_SEARCH_TERMS = [
+    'police',
+    'cop',
+    'cops',
+    'officer',
+    'bodycam',
+    'body cam',
+    'body camera',
+    'arrest',
+    'arrested',
+    'arresting',
+    'detained',
+    'detention',
+    'custody',
+    'handcuffed',
+    'cuffed',
+];
+
 function normalizeSearchTerm(term) {
     return String(term || '')
         .trim()
@@ -200,6 +218,24 @@ function getTermWords(term) {
         .split(/\s+/)
         .map(word => word.trim())
         .filter(word => word.length >= 2);
+}
+
+function normalizeStopwordTerm(term) {
+    return normalizeSearchTerm(term).toLowerCase();
+}
+
+const DOMAIN_GENERIC_SEARCH_TERM_SET = new Set(DOMAIN_GENERIC_SEARCH_TERMS.map(normalizeStopwordTerm));
+const DOMAIN_GENERIC_SEARCH_WORD_SET = new Set(
+    DOMAIN_GENERIC_SEARCH_TERMS.flatMap(term => getTermWords(term))
+);
+
+export function isDomainGenericSearchTerm(term) {
+    const normalizedTerm = normalizeStopwordTerm(term);
+    if (!normalizedTerm) return false;
+    if (DOMAIN_GENERIC_SEARCH_TERM_SET.has(normalizedTerm)) return true;
+
+    const words = getTermWords(normalizedTerm);
+    return words.length > 1 && words.every(word => DOMAIN_GENERIC_SEARCH_WORD_SET.has(word));
 }
 
 function normalizeOperator(operator, fallback = 'OR') {
@@ -242,6 +278,60 @@ export function normalizeAdvancedSearchPlan(plan) {
     return {
         rootOperator: normalizeOperator(rawPlan?.rootOperator, 'AND'),
         groups,
+    };
+}
+
+export function filterDomainGenericTermsFromPlan(plan) {
+    const normalizedPlan = normalizeAdvancedSearchPlan(plan);
+
+    if (!normalizedPlan) {
+        return {
+            plan: null,
+            droppedTerms: [],
+            droppedFacets: [],
+            unmatchedFacets: [],
+        };
+    }
+
+    const droppedTerms = [];
+    const droppedFacets = [];
+    const groups = normalizedPlan.groups
+        .map((group, groupIndex) => {
+            const keptTerms = [];
+            const groupDroppedTerms = [];
+
+            for (const term of group.terms) {
+                if (isDomainGenericSearchTerm(term)) {
+                    groupDroppedTerms.push(term);
+                    droppedTerms.push({ groupIndex, term, reason: 'domain_generic' });
+                } else {
+                    keptTerms.push(term);
+                }
+            }
+
+            if (keptTerms.length === 0) {
+                droppedFacets.push({
+                    groupIndex,
+                    operator: group.operator,
+                    terms: group.terms,
+                    droppedTerms: groupDroppedTerms,
+                    reason: 'domain_generic',
+                });
+                return null;
+            }
+
+            return {
+                operator: group.operator,
+                terms: keptTerms,
+            };
+        })
+        .filter(Boolean);
+
+    return {
+        plan: groups.length > 0 ? { rootOperator: normalizedPlan.rootOperator, groups } : null,
+        droppedTerms,
+        droppedFacets,
+        unmatchedFacets: droppedFacets,
     };
 }
 
@@ -320,11 +410,17 @@ export function validateAdvancedSearchPlanWithCorpus(plan, dictionary) {
             const groupDroppedTerms = [];
 
             for (const term of group.terms) {
+                if (isDomainGenericSearchTerm(term)) {
+                    groupDroppedTerms.push(term);
+                    droppedTerms.push({ groupIndex, term, reason: 'domain_generic' });
+                    continue;
+                }
+
                 if (termExistsInCorpus(term, lexemes)) {
                     keptTerms.push(term);
                 } else {
                     groupDroppedTerms.push(term);
-                    droppedTerms.push({ groupIndex, term });
+                    droppedTerms.push({ groupIndex, term, reason: 'not_in_corpus' });
                 }
             }
 
@@ -337,6 +433,7 @@ export function validateAdvancedSearchPlanWithCorpus(plan, dictionary) {
                     operator: group.operator,
                     terms: group.terms,
                     droppedTerms: groupDroppedTerms,
+                    reason: groupDroppedTerms.every(isDomainGenericSearchTerm) ? 'domain_generic' : 'unmatched_corpus',
                 };
                 droppedFacets.push(facet);
                 unmatchedFacets.push(facet);
