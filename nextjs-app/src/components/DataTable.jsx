@@ -9,6 +9,12 @@ const removeAccents = (str) => {
     return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 };
 
+const isAlphaNumeric = (char) => Boolean(char && /[\p{L}\p{N}]/u.test(char));
+
+const canHighlightMatch = (text, start, end) => {
+    return !isAlphaNumeric(text[start - 1]) && !isAlphaNumeric(text[end]);
+};
+
 const DISPLAY_DATE_OFFSET_MINUTES = 7 * 60;
 
 const formatDateParts = (year, month, day) => {
@@ -67,30 +73,64 @@ const CHANNEL_ACTIONS = [
 const Highlight = ({ text, searches, enabled }) => {
     if (!enabled || !searches || searches.length === 0) return <span>{text}</span>;
 
-    const validSearches = searches.filter(s => s && s.trim());
+    const validSearches = searches
+        .map(s => String(s || '').trim())
+        .filter(Boolean);
     if (validSearches.length === 0) return <span>{text}</span>;
 
-    // Sort validSearches by length descending to match longest terms first
-    const sortedSearches = [...validSearches].sort((a, b) => b.length - a.length);
+    const sourceText = String(text);
+    const normalizedSearches = validSearches.map((search, index) => ({
+        search,
+        normalized: removeAccents(search.toLowerCase()),
+        index,
+    }));
+    const normalizedSource = removeAccents(sourceText.toLowerCase());
+    const matches = [];
 
-    // Create regex for words, escaping special chars
-    const escapedSearches = sortedSearches.map(s => s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|');
-    const regex = new RegExp(`(${escapedSearches})`, 'gi');
+    normalizedSearches
+        .sort((a, b) => b.normalized.length - a.normalized.length)
+        .forEach(({ normalized, index }) => {
+            let fromIndex = 0;
+            while (fromIndex < normalizedSource.length) {
+                const start = normalizedSource.indexOf(normalized, fromIndex);
+                if (start === -1) break;
 
-    const parts = String(text).split(regex);
+                const end = start + normalized.length;
+                const overlaps = matches.some(match => start < match.end && end > match.start);
+                if (!overlaps && canHighlightMatch(normalizedSource, start, end)) {
+                    matches.push({ start, end, index });
+                }
+
+                fromIndex = start + Math.max(normalized.length, 1);
+            }
+        });
+
+    if (matches.length === 0) return <span>{text}</span>;
+    matches.sort((a, b) => a.start - b.start);
+
+    const parts = [];
+    let cursor = 0;
+    matches.forEach((match) => {
+        if (match.start > cursor) {
+            parts.push({ text: sourceText.slice(cursor, match.start), highlight: false });
+        }
+        parts.push({
+            text: sourceText.slice(match.start, match.end),
+            highlight: true,
+            index: match.index,
+        });
+        cursor = match.end;
+    });
+
+    if (cursor < sourceText.length) {
+        parts.push({ text: sourceText.slice(cursor), highlight: false });
+    }
 
     return (
         <span>
             {parts.map((part, i) => {
-                // Better matching: check if part (without accents) matches any search term (without accents)
-                const lowerPartNoAccent = removeAccents(part.toLowerCase());
-                const originalIndex = searches.findIndex(s => {
-                    const tagNoAccent = removeAccents(s.trim().toLowerCase());
-                    return tagNoAccent === lowerPartNoAccent || s.trim().toLowerCase() === part.toLowerCase();
-                });
-
-                if (originalIndex !== -1) {
-                    const color = `hsl(${(originalIndex * 137) % 360}, 70%, 50%)`;
+                if (part.highlight) {
+                    const color = `hsl(${(part.index * 137) % 360}, 70%, 50%)`;
                     return (
                         <mark
                             key={i}
@@ -103,12 +143,12 @@ const Highlight = ({ text, searches, enabled }) => {
                                 textShadow: '0 0 2px rgba(0,0,0,0.5)'
                             }}
                         >
-                            {part}
+                            {part.text}
                         </mark>
                     );
                 }
                 return (
-                    <span key={i}>{part}</span>
+                    <span key={i}>{part.text}</span>
                 );
             })}
         </span>
@@ -1478,7 +1518,7 @@ const DataTable = ({
             );
         }
 
-        return <Highlight text={value} searches={activeHighlightTerms} enabled={highlightEnabled} />;
+        return <span>{value}</span>;
     };
 
     const getHeaderClass = (header) => {
