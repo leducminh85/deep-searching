@@ -1758,6 +1758,102 @@ th {
   color: white;
 }
 
+.ai-topic-button {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0 0.8rem;
+  border: 1px solid rgba(245, 158, 11, 0.36);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.95), rgba(99, 102, 241, 0.9));
+  color: white;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(99, 102, 241, 0.18);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+}
+
+.ai-topic-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(99, 102, 241, 0.26);
+}
+
+.ai-topic-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.advanced-search-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--glass-border);
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--text-color);
+}
+
+.advanced-search-summary > svg {
+  flex: 0 0 auto;
+  margin-top: 0.2rem;
+  color: #f59e0b;
+}
+
+.advanced-search-summary div {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.advanced-search-summary strong {
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.advanced-search-summary span {
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.advanced-search-summary em {
+  color: #f59e0b;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.advanced-search-summary button {
+  flex: 0 0 auto;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: var(--glass-bg);
+  color: var(--text-color);
+  padding: 0.45rem 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.advanced-search-summary button:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.advanced-search-summary.error {
+  align-items: center;
+  background: rgba(244, 63, 94, 0.08);
+  color: var(--accent-color);
+}
+
 .profile-menu-wrap {
   position: relative;
   display: inline-flex;

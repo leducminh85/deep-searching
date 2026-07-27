@@ -25,6 +25,7 @@ export async function GET(request) {
         const sortBy = searchParams.get('sort') || 'Created At';
         const sortOrder = searchParams.get('order') || 'desc';
         const mode = searchParams.get('mode') || 'or';
+        const advancedQuery = searchParams.get('advanced_query') || null;
         const minViews = searchParams.get('min_views') ? parseInt(searchParams.get('min_views'), 10) : null;
         const maxViews = searchParams.get('max_views') ? parseInt(searchParams.get('max_views'), 10) : null;
         const startDate = searchParams.get('start_date') || null;
@@ -37,17 +38,22 @@ export async function GET(request) {
         const captionSearch = captionSearchParam === '1';
 
         // Query video data từ LOCAL PostgreSQL
-        const [data, total, errorInfo] = await getDataInternal(
+        const [data, total, errorInfo, searchMeta] = await getDataInternal(
             query, page, pageSize, sortBy, sortOrder, 
             mode, minViews, maxViews, startDate, endDate, channels, captionSearch,
-            profileId, user.email, hideUsed
+            profileId, user.email, hideUsed, advancedQuery
         );
 
         if (errorInfo) {
             return NextResponse.json({ detail: errorInfo, data: [], total: 0 }, { status: 500 });
         }
 
-        const response = NextResponse.json({ data, total, page, page_size: pageSize });
+        const responsePayload = { data, total, page, page_size: pageSize };
+        if (searchMeta) {
+            responsePayload.search = searchMeta;
+        }
+
+        const response = NextResponse.json(responsePayload);
 
         // Ghi log lịch sử tìm kiếm vẫn dùng Supabase
         if (page === 1 && query && query.trim()) {
@@ -94,7 +100,8 @@ export async function getDataInternal(
     captionSearch,
     profileId = null,
     userEmail = null,
-    hideUsed = false
+    hideUsed = false,
+    advancedQuery = null
 ) {
     // Dùng LOCAL PostgreSQL cho video data
     return await queryVideos({
@@ -113,5 +120,6 @@ export async function getDataInternal(
         profileId,
         userEmail,
         hideUsed,
+        advancedQuery,
     });
 }

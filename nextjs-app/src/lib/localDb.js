@@ -167,6 +167,411 @@ function appendUsedPredicate(params, profileId, userEmail) {
     `;
 }
 
+const MAX_ADVANCED_GROUPS = 3;
+const MAX_ADVANCED_TERMS_PER_GROUP = 8;
+const MAX_ADVANCED_TERM_LENGTH = 64;
+const LEXEME_CACHE_TTL = 10 * 60 * 1000;
+const LEXEME_LIMIT = 20000;
+const BROAD_FACET_THRESHOLD_RATIO = 0.25;
+const BROAD_FACET_WEIGHT = 0.4;
+const lexemeCache = new Map();
+
+function normalizeSearchTerm(term) {
+    return String(term || '')
+        .trim()
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .slice(0, MAX_ADVANCED_TERM_LENGTH)
+        .trim();
+}
+
+function termToTsQuery(term) {
+    const safeTerm = normalizeSearchTerm(term);
+    const words = safeTerm.split(/\s+/).filter(Boolean);
+
+    if (words.length === 0) return null;
+    if (words.length > 1) return `(${words.join(' <-> ')})`;
+    return words[0];
+}
+
+function getTermWords(term) {
+    return normalizeSearchTerm(term)
+        .toLowerCase()
+        .split(/\s+/)
+        .map(word => word.trim())
+        .filter(word => word.length >= 2);
+}
+
+function normalizeOperator(operator, fallback = 'OR') {
+    const value = String(operator || fallback).trim().toUpperCase();
+    if (value === 'AND' || value === 'OR') return value;
+    return String(fallback).trim().toUpperCase() === 'AND' ? 'AND' : 'OR';
+}
+
+export function normalizeAdvancedSearchPlan(plan) {
+    let rawPlan = plan;
+    if (typeof rawPlan === 'string') {
+        try {
+            rawPlan = JSON.parse(rawPlan);
+        } catch {
+            return null;
+        }
+    }
+
+    const rawGroups = Array.isArray(rawPlan?.groups) ? rawPlan.groups : [];
+    const groups = rawGroups
+        .slice(0, MAX_ADVANCED_GROUPS)
+        .map(group => {
+            const terms = Array.isArray(group?.terms)
+                ? group.terms
+                    .map(normalizeSearchTerm)
+                    .filter(Boolean)
+                    .filter((term, index, arr) => arr.indexOf(term) === index)
+                    .slice(0, MAX_ADVANCED_TERMS_PER_GROUP)
+                : [];
+
+            return {
+                operator: normalizeOperator(group?.operator, 'OR'),
+                terms,
+            };
+        })
+        .filter(group => group.terms.length > 0);
+
+    if (groups.length === 0) return null;
+
+    return {
+        rootOperator: normalizeOperator(rawPlan?.rootOperator, 'AND'),
+        groups,
+    };
+}
+
+function normalizeLexemeDictionary(dictionary) {
+    if (!dictionary) {
+        return { words: new Map() };
+    }
+
+    if (dictionary instanceof Set) {
+        return {
+            words: new Map(Array.from(dictionary).map(word => [String(word).toLowerCase(), 1])),
+        };
+    }
+
+    if (dictionary instanceof Map) {
+        return { words: dictionary };
+    }
+
+    if (dictionary.words instanceof Map) {
+        return dictionary;
+    }
+
+    if (dictionary.words instanceof Set) {
+        return normalizeLexemeDictionary(dictionary.words);
+    }
+
+    if (Array.isArray(dictionary.words)) {
+        return {
+            words: new Map(dictionary.words.map(item => {
+                if (Array.isArray(item)) return [String(item[0]).toLowerCase(), Number(item[1] || 1)];
+                if (typeof item === 'object') return [String(item.word || '').toLowerCase(), Number(item.nentry || item.count || 1)];
+                return [String(item).toLowerCase(), 1];
+            }).filter(([word]) => word)),
+        };
+    }
+
+    return { words: new Map() };
+}
+
+function termExistsInCorpus(term, dictionary) {
+    const lexemes = normalizeLexemeDictionary(dictionary).words;
+    const words = getTermWords(term);
+    if (words.length === 0) return false;
+    return words.every(word => lexemes.has(word));
+}
+
+function estimateTermCorpusCount(term, dictionary) {
+    const lexemes = normalizeLexemeDictionary(dictionary).words;
+    const words = getTermWords(term);
+    if (words.length === 0) return 0;
+    return Math.min(...words.map(word => Number(lexemes.get(word) || 0)));
+}
+
+export function validateAdvancedSearchPlanWithCorpus(plan, dictionary) {
+    const normalizedPlan = normalizeAdvancedSearchPlan(plan);
+    const lexemes = normalizeLexemeDictionary(dictionary);
+
+    if (!normalizedPlan) {
+        return {
+            plan: null,
+            droppedFacets: [],
+            droppedTerms: [],
+            unmatchedFacets: [],
+            facetLexemeCounts: [],
+        };
+    }
+
+    const droppedFacets = [];
+    const droppedTerms = [];
+    const unmatchedFacets = [];
+    const facetLexemeCounts = [];
+
+    const groups = normalizedPlan.groups
+        .map((group, groupIndex) => {
+            const keptTerms = [];
+            const groupDroppedTerms = [];
+
+            for (const term of group.terms) {
+                if (termExistsInCorpus(term, lexemes)) {
+                    keptTerms.push(term);
+                } else {
+                    groupDroppedTerms.push(term);
+                    droppedTerms.push({ groupIndex, term });
+                }
+            }
+
+            const facetCount = keptTerms.reduce((sum, term) => sum + estimateTermCorpusCount(term, lexemes), 0);
+            facetLexemeCounts.push(facetCount);
+
+            if (keptTerms.length === 0) {
+                const facet = {
+                    groupIndex,
+                    operator: group.operator,
+                    terms: group.terms,
+                    droppedTerms: groupDroppedTerms,
+                };
+                droppedFacets.push(facet);
+                unmatchedFacets.push(facet);
+                return null;
+            }
+
+            return {
+                operator: group.operator,
+                terms: keptTerms,
+            };
+        })
+        .filter(Boolean);
+
+    return {
+        plan: groups.length > 0 ? { rootOperator: normalizedPlan.rootOperator, groups } : null,
+        originalPlan: normalizedPlan,
+        droppedFacets,
+        droppedTerms,
+        unmatchedFacets,
+        facetLexemeCounts,
+    };
+}
+
+export function analyzeAdvancedFacetWeights(plan, dictionary) {
+    const normalizedPlan = normalizeAdvancedSearchPlan(plan);
+    const lexemes = normalizeLexemeDictionary(dictionary).words;
+    const totalVideos = Math.max(Number(dictionary?.totalVideos || 0), 1);
+
+    if (!normalizedPlan) {
+        return {
+            broadFacets: [],
+            facetWeights: [],
+            facetTermCounts: [],
+        };
+    }
+
+    const broadFacets = [];
+    const facetWeights = [];
+    const facetTermCounts = [];
+
+    normalizedPlan.groups.forEach((group, groupIndex) => {
+        const termCounts = group.terms.map(term => ({
+            term,
+            count: estimateTermCorpusCount(term, { words: lexemes }),
+        }));
+        const usableCounts = termCounts.filter(item => item.count > 0);
+        const isBroad = usableCounts.length > 0 && usableCounts.every(item => item.count / totalVideos >= BROAD_FACET_THRESHOLD_RATIO);
+
+        facetTermCounts.push(termCounts);
+        facetWeights.push(isBroad ? BROAD_FACET_WEIGHT : 1);
+
+        if (isBroad) {
+            broadFacets.push({
+                groupIndex,
+                terms: group.terms,
+                label: group.terms.join('|'),
+                threshold_ratio: BROAD_FACET_THRESHOLD_RATIO,
+                weight: BROAD_FACET_WEIGHT,
+                term_counts: termCounts,
+            });
+        }
+    });
+
+    return {
+        broadFacets,
+        facetWeights,
+        facetTermCounts,
+        totalVideos,
+    };
+}
+
+export function buildAdvancedSearchTsQuery(plan) {
+    const normalizedPlan = normalizeAdvancedSearchPlan(plan);
+    if (!normalizedPlan) return null;
+
+    const groupQueries = normalizedPlan.groups
+        .map(group => {
+            const termQueries = group.terms.map(termToTsQuery).filter(Boolean);
+            if (termQueries.length === 0) return null;
+
+            const operator = group.operator === 'AND' ? ' & ' : ' | ';
+            const query = termQueries.join(operator);
+            return termQueries.length > 1 ? `(${query})` : query;
+        })
+        .filter(Boolean);
+
+    if (groupQueries.length === 0) return null;
+
+    const rootOperator = normalizedPlan.rootOperator === 'OR' ? ' | ' : ' & ';
+    return groupQueries.join(rootOperator);
+}
+
+export function buildRelaxedAdvancedSearchTsQuery(plan) {
+    const normalizedPlan = normalizeAdvancedSearchPlan(plan);
+    if (!normalizedPlan) return null;
+
+    const groupQueries = normalizedPlan.groups
+        .map(group => {
+            const relaxedTerms = group.terms
+                .flatMap(term => {
+                    const phraseQuery = termToTsQuery(term);
+                    const words = normalizeSearchTerm(term)
+                        .split(/\s+/)
+                        .map(word => word.trim())
+                        .filter(word => word.length >= 2);
+                    return [phraseQuery, ...words].filter(Boolean);
+                })
+                .filter((term, index, arr) => arr.indexOf(term) === index)
+                .slice(0, 16);
+
+            if (relaxedTerms.length === 0) return null;
+            return relaxedTerms.length > 1 ? `(${relaxedTerms.join(' | ')})` : relaxedTerms[0];
+        })
+        .filter(Boolean);
+
+    if (groupQueries.length === 0) return null;
+
+    const rootOperator = normalizedPlan.rootOperator === 'OR' ? ' | ' : ' & ';
+    return groupQueries.join(rootOperator);
+}
+
+export function buildOptionalAdvancedSearchTsQuery(plan) {
+    const normalizedPlan = normalizeAdvancedSearchPlan(plan);
+    if (!normalizedPlan) return null;
+
+    const groupQueries = normalizedPlan.groups
+        .map(group => {
+            const termQueries = group.terms.map(termToTsQuery).filter(Boolean);
+            if (termQueries.length === 0) return null;
+            const operator = group.operator === 'AND' ? ' & ' : ' | ';
+            const query = termQueries.join(operator);
+            return termQueries.length > 1 ? `(${query})` : query;
+        })
+        .filter(Boolean);
+
+    if (groupQueries.length === 0) return null;
+    return groupQueries.join(' | ');
+}
+
+export function dropWeakestAdvancedFacet(plan, facetMatchCounts = []) {
+    const normalizedPlan = normalizeAdvancedSearchPlan(plan);
+    if (!normalizedPlan || normalizedPlan.groups.length <= 1) return null;
+
+    const scoredGroups = normalizedPlan.groups.map((group, index) => ({
+        group,
+        index,
+        score: Number.isFinite(Number(facetMatchCounts[index])) ? Number(facetMatchCounts[index]) : Number.MAX_SAFE_INTEGER,
+        termCount: group.terms.length,
+    }));
+
+    scoredGroups.sort((a, b) => {
+        if (a.score !== b.score) return a.score - b.score;
+        return a.termCount - b.termCount;
+    });
+
+    const dropped = scoredGroups[0];
+    const groups = normalizedPlan.groups.filter((_, index) => index !== dropped.index);
+    if (groups.length === 0) return null;
+
+    return {
+        plan: {
+            rootOperator: groups.length > 1 ? normalizedPlan.rootOperator : 'OR',
+            groups,
+        },
+        droppedFacet: {
+            groupIndex: dropped.index,
+            operator: dropped.group.operator,
+            terms: dropped.group.terms,
+            reason: 'weakest_facet_after_zero_results',
+        },
+    };
+}
+
+function buildKeywordSearchTsQuery(query, mode) {
+    const safeQuery = query.trim().replace(/[^\p{L}\p{N}\s,]/gu, '');
+    const tags = safeQuery.split(',').map(t => t.trim()).filter(t => t);
+
+    const tagQueries = tags.map(termToTsQuery).filter(Boolean);
+    if (tagQueries.length === 0) return null;
+
+    const operator = mode === 'and' ? ' & ' : ' | ';
+    return tagQueries.join(operator);
+}
+
+function getSafeFtsColumn(ftsColumn) {
+    return ftsColumn === 'fts' ? 'fts' : 'fts_no_caption';
+}
+
+export async function getSearchLexemeDictionary(ftsColumn = 'fts_no_caption') {
+    const safeColumn = getSafeFtsColumn(ftsColumn);
+    const cacheKey = safeColumn;
+    const cached = lexemeCache.get(cacheKey);
+    const now = Date.now();
+
+    if (cached && now - cached.timestamp < LEXEME_CACHE_TTL) {
+        return cached.dictionary;
+    }
+
+    const db = getPool();
+    const [result, totalResult] = await Promise.all([
+        db.query(
+        `SELECT word, nentry
+         FROM ts_stat('SELECT ${safeColumn} FROM videos')
+         WHERE length(word) >= 2
+         ORDER BY nentry DESC
+         LIMIT $1`,
+        [LEXEME_LIMIT]
+        ),
+        db.query(`SELECT COUNT(*)::INT AS total FROM videos`),
+    ]);
+
+    const words = new Map(
+        result.rows
+            .map(row => [String(row.word || '').toLowerCase(), Number(row.nentry || 0)])
+            .filter(([word]) => word)
+    );
+    const dictionary = {
+        ftsColumn: safeColumn,
+        words,
+        totalVideos: Number(totalResult.rows[0]?.total || 0),
+        topTerms: result.rows.slice(0, 120).map(row => ({
+            word: String(row.word || ''),
+            count: Number(row.nentry || 0),
+        })),
+    };
+
+    lexemeCache.set(cacheKey, { timestamp: now, dictionary });
+    return dictionary;
+}
+
+export async function getTopSearchLexemes(limit = 80, ftsColumn = 'fts_no_caption') {
+    const dictionary = await getSearchLexemeDictionary(ftsColumn);
+    return dictionary.topTerms.slice(0, limit);
+}
+
 /**
  * Query videos with search, pagination, sorting, and advanced filters.
  * Mirrors the Supabase query logic from the original /api/data/route.js
@@ -187,6 +592,7 @@ export async function queryVideos({
     profileId = null,
     userEmail = null,
     hideUsed = false,
+    advancedQuery = null,
 } = {}) {
     await ensureUsageSchema();
     const db = getPool();
@@ -206,7 +612,9 @@ export async function queryVideos({
         'summary': 'summary',
     };
 
-    const dbSortColumn = columnMap[String(sortBy).toLowerCase().trim()] || 'created_at';
+    const normalizedSortBy = String(sortBy).toLowerCase().trim();
+    const isRelevanceSort = normalizedSortBy === 'relevance';
+    const dbSortColumn = columnMap[normalizedSortBy] || 'created_at';
     const isDescending = String(sortOrder).toLowerCase() === 'desc';
     const offset = (page - 1) * pageSize;
 
@@ -224,25 +632,99 @@ export async function queryVideos({
     `);
 
     // Full-Text Search
-    if (query && query.trim()) {
-        const ftsColumn = captionSearch ? 'fts' : 'fts_no_caption';
-        const safeQuery = query.trim().replace(/[^\p{L}\p{N}\s,]/gu, '');
-        const tags = safeQuery.split(',').map(t => t.trim()).filter(t => t);
+    const ftsColumn = captionSearch ? 'fts' : 'fts_no_caption';
+    let ftsParamPosition = -1;
+    let ftsQuery = null;
+    let relaxedAdvancedTsQuery = null;
+    let advancedEffectivePlan = null;
+    let advancedSearchMeta = null;
+    let facetRankingQueries = [];
+    let facetRankingWeights = [];
 
-        const tagQueries = tags.map(tag => {
-            const words = tag.split(/\s+/).filter(w => w);
-            if (words.length > 1) {
-                return `(${words.join(' <-> ')})`;
+    if ((query && query.trim()) || (mode === 'advanced' && advancedQuery)) {
+        if (mode === 'advanced' && advancedQuery) {
+            const normalizedAdvancedPlan = normalizeAdvancedSearchPlan(advancedQuery);
+            let validation = {
+                plan: normalizedAdvancedPlan,
+                originalPlan: normalizedAdvancedPlan,
+                droppedFacets: [],
+                droppedTerms: [],
+                unmatchedFacets: [],
+                facetLexemeCounts: [],
+            };
+            let corpusValidationError = null;
+
+            try {
+                const dictionary = await getSearchLexemeDictionary(ftsColumn);
+                validation = validateAdvancedSearchPlanWithCorpus(normalizedAdvancedPlan, dictionary);
+                const facetWeightInfo = analyzeAdvancedFacetWeights(validation.plan || normalizedAdvancedPlan, dictionary);
+                facetRankingWeights = facetWeightInfo.facetWeights;
+                facetRankingQueries = (validation.plan || normalizedAdvancedPlan)?.groups?.map(group => buildAdvancedSearchTsQuery({ rootOperator: 'AND', groups: [group] })) || [];
+                advancedSearchMeta = {
+                    mode: 'advanced',
+                    fts_column: ftsColumn,
+                    strict_total: null,
+                    relaxed: false,
+                    strategy: null,
+                    effective_query: null,
+                    relaxed_query: null,
+                    original_plan: validation.originalPlan || normalizedAdvancedPlan,
+                    validated_plan: validation.plan || normalizedAdvancedPlan,
+                    dropped_facets: validation.droppedFacets || [],
+                    dropped_terms: validation.droppedTerms || [],
+                    unmatched_facets: validation.unmatchedFacets || [],
+                    facet_lexeme_counts: validation.facetLexemeCounts || [],
+                    facet_match_counts: [],
+                    corpus_validation_error: null,
+                    broad_facets: facetWeightInfo.broadFacets.map(facet => facet.label),
+                    broad_facet_details: facetWeightInfo.broadFacets,
+                    facet_weights: facetWeightInfo.facetWeights,
+                    facet_term_counts: facetWeightInfo.facetTermCounts,
+                    total_videos: facetWeightInfo.totalVideos,
+                    sort_strategy: isRelevanceSort ? 'relevance' : normalizedSortBy,
+                    rank_applied: false,
+                };
+            } catch (error) {
+                corpusValidationError = error.message;
             }
-            return words[0];
-        });
 
-        if (tagQueries.length > 0) {
-            const operator = mode === 'and' ? ' & ' : ' | ';
-            const ftsQuery = tagQueries.join(operator);
-            conditions.push(`${ftsColumn} @@ to_tsquery('simple', $${paramIndex})`);
-            params.push(ftsQuery);
-            paramIndex++;
+            advancedEffectivePlan = validation.plan || normalizedAdvancedPlan;
+            ftsQuery = buildAdvancedSearchTsQuery(advancedEffectivePlan);
+            relaxedAdvancedTsQuery = buildRelaxedAdvancedSearchTsQuery(advancedEffectivePlan);
+            if (!advancedSearchMeta) {
+                facetRankingWeights = advancedEffectivePlan?.groups?.map(() => 1) || [];
+                facetRankingQueries = advancedEffectivePlan?.groups?.map(group => buildAdvancedSearchTsQuery({ rootOperator: 'AND', groups: [group] })) || [];
+                advancedSearchMeta = {
+                    mode: 'advanced',
+                    fts_column: ftsColumn,
+                    strict_total: null,
+                    relaxed: false,
+                    strategy: ftsQuery ? 'strict' : 'no_query',
+                    effective_query: ftsQuery,
+                    relaxed_query: relaxedAdvancedTsQuery,
+                    original_plan: validation.originalPlan || normalizedAdvancedPlan,
+                    validated_plan: advancedEffectivePlan,
+                    dropped_facets: validation.droppedFacets || [],
+                    dropped_terms: validation.droppedTerms || [],
+                    unmatched_facets: validation.unmatchedFacets || [],
+                    facet_lexeme_counts: validation.facetLexemeCounts || [],
+                    facet_match_counts: [],
+                    corpus_validation_error: corpusValidationError,
+                    broad_facets: [],
+                    facet_weights: facetRankingWeights,
+                    facet_term_counts: [],
+                    sort_strategy: isRelevanceSort ? 'relevance' : normalizedSortBy,
+                    rank_applied: false,
+                };
+            } else {
+                advancedSearchMeta.strategy = ftsQuery ? 'strict' : 'no_query';
+                advancedSearchMeta.effective_query = ftsQuery;
+                advancedSearchMeta.relaxed_query = relaxedAdvancedTsQuery;
+                advancedSearchMeta.validated_plan = advancedEffectivePlan;
+                advancedSearchMeta.corpus_validation_error = corpusValidationError;
+            }
+        } else {
+            ftsQuery = query?.trim() ? buildKeywordSearchTsQuery(query, mode) : null;
         }
     }
 
@@ -276,85 +758,247 @@ export async function queryVideos({
         }
     }
 
-    const orderClause = `ORDER BY ${dbSortColumn} ${isDescending ? 'DESC' : 'ASC'} NULLS LAST`;
+    const rankCanApply = Boolean(ftsQuery);
+    const relevanceSortActive = isRelevanceSort && rankCanApply;
+    const defaultOrderClause = `ORDER BY ${dbSortColumn} ${isDescending ? 'DESC' : 'ASC'} NULLS LAST`;
     const canUseProfileFilter = Boolean(profileId && userEmail);
+    const baseSearchConditions = [...conditions];
+    const baseSearchParams = [...params];
 
     try {
-        // Count query
-        const countParams = [...params];
-        const countConditions = [...conditions];
-        if (canUseProfileFilter && hideUsed) {
-            countConditions.push(`NOT ${appendUsedPredicate(countParams, profileId, userEmail)}`);
-        }
-        const countWhereClause = countConditions.length > 0 ? `WHERE ${countConditions.join(' AND ')}` : '';
-        const countSql = `SELECT COUNT(*) as total FROM videos ${countWhereClause}`;
-        const countResult = await db.query(countSql, countParams);
-        const totalCount = parseInt(countResult.rows[0].total, 10);
+        const countWithSearch = async (searchTsQuery, sourceConditions = baseSearchConditions, sourceParams = baseSearchParams) => {
+            const countParams = [...sourceParams];
+            const countConditions = [...sourceConditions];
+            if (searchTsQuery) {
+                countConditions.push(`${ftsColumn} @@ to_tsquery('simple', $${countParams.length + 1})`);
+                countParams.push(searchTsQuery);
+            }
+            if (canUseProfileFilter && hideUsed) {
+                countConditions.push(`NOT ${appendUsedPredicate(countParams, profileId, userEmail)}`);
+            }
+            const countWhereClause = countConditions.length > 0 ? `WHERE ${countConditions.join(' AND ')}` : '';
+            const countSql = `SELECT COUNT(*) as total FROM videos ${countWhereClause}`;
+            const countResult = await db.query(countSql, countParams);
+            return parseInt(countResult.rows[0].total, 10);
+        };
 
-        // Data query
-        const dataParams = [...params];
-        const dataConditions = [...conditions];
-        let usedSelect = `FALSE AS is_used`;
-
-        if (canUseProfileFilter) {
-            if (hideUsed) {
-                dataConditions.push(`NOT ${appendUsedPredicate(dataParams, profileId, userEmail)}`);
-            } else {
-                usedSelect = `${appendUsedPredicate(dataParams, profileId, userEmail)} AS is_used`;
+        if (advancedSearchMeta?.validated_plan?.groups?.length) {
+            advancedSearchMeta.facet_match_counts = [];
+            for (const group of advancedSearchMeta.validated_plan.groups) {
+                const facetQuery = buildAdvancedSearchTsQuery({ rootOperator: 'AND', groups: [group] });
+                advancedSearchMeta.facet_match_counts.push(facetQuery ? await countWithSearch(facetQuery) : 0);
             }
         }
 
-        const dataWhereClause = dataConditions.length > 0 ? `WHERE ${dataConditions.join(' AND ')}` : '';
-        const limitParam = dataParams.length + 1;
-        const offsetParam = dataParams.length + 2;
+        if (ftsQuery) {
+            conditions.push(`${ftsColumn} @@ to_tsquery('simple', $${paramIndex})`);
+            ftsParamPosition = params.length;
+            params.push(ftsQuery);
+            paramIndex++;
+        }
 
-        const dataSql = `
-            SELECT
-                title,
-                url,
-                channel_name,
-                views,
-                date_published,
-                thumbnail,
-                created_at,
-                summary,
-                video_key,
-                COALESCE((
-                    SELECT cs.status
-                    FROM channel_sources cs
-                    WHERE lower(btrim(cs.channel_name)) = lower(btrim(videos.channel_name))
-                    ORDER BY CASE WHEN cs.status = 'copyright' THEN 0 ELSE 1 END
-                    LIMIT 1
-                ), 'normal') AS channel_status,
-                ${usedSelect}
-            FROM videos
-            ${dataWhereClause}
-            ${orderClause}
-            LIMIT $${limitParam} OFFSET $${offsetParam}
-        `;
-        dataParams.push(pageSize, offset);
+        if (advancedSearchMeta) {
+            advancedSearchMeta.sort_strategy = relevanceSortActive ? 'relevance' : normalizedSortBy;
+            advancedSearchMeta.rank_applied = relevanceSortActive;
+        }
 
-        const dataResult = await db.query(dataSql, dataParams);
+        const runVideoQuery = async (baseParams) => {
+            // Count query
+            const countParams = [...baseParams];
+            const countConditions = [...conditions];
+            if (canUseProfileFilter && hideUsed) {
+                countConditions.push(`NOT ${appendUsedPredicate(countParams, profileId, userEmail)}`);
+            }
+            const countWhereClause = countConditions.length > 0 ? `WHERE ${countConditions.join(' AND ')}` : '';
+            const countSql = `SELECT COUNT(*) as total FROM videos ${countWhereClause}`;
+            const countResult = await db.query(countSql, countParams);
+            const totalCount = parseInt(countResult.rows[0].total, 10);
 
-        const formatted = dataResult.rows.map(r => {
-            return {
-                'Title': r.title || '',
-                'URL': r.url || '',
-                'Channel Name': r.channel_name || '',
-                'Views': r.views || 0,
-                'Date Published': r.date_published || '',
-                'Thumbnail': r.thumbnail || '',
-                'Summary': r.summary || '',
-                'Video Key': r.video_key || '',
-                'Channel Status': r.channel_status || 'normal',
-                'Used': Boolean(r.is_used),
-            };
-        });
+            // Data query
+            const dataParams = [...baseParams];
+            const dataConditions = [...conditions];
+            let usedSelect = `FALSE AS is_used`;
+            const rankSelect = ftsParamPosition >= 0
+                ? `ts_rank_cd(${ftsColumn}, to_tsquery('simple', $${ftsParamPosition + 1})) AS search_rank`
+                : `0::REAL AS search_rank`;
+            const facetScoreParts = [];
+            const facetTitleScoreParts = [];
 
-        return [formatted, totalCount, null];
+            if (mode === 'advanced' && facetRankingQueries.length > 0) {
+                facetRankingQueries.forEach((facetQuery, index) => {
+                    if (!facetQuery) return;
+                    dataParams.push(facetQuery);
+                    const facetParam = dataParams.length;
+                    const weight = Number(facetRankingWeights[index] || 1);
+                    const captionWeight = Math.max(Number((weight * 0.35).toFixed(3)), 0.1);
+                    const titleWeight = Number((weight * 2).toFixed(3));
+                    facetScoreParts.push(`
+                        CASE
+                            WHEN to_tsvector('simple', coalesce(title, '')) @@ to_tsquery('simple', $${facetParam}) THEN ${titleWeight}
+                            WHEN to_tsvector('simple', coalesce(summary, '') || ' ' || coalesce(channel_name, '')) @@ to_tsquery('simple', $${facetParam}) THEN ${weight}
+                            ${captionSearch ? `WHEN to_tsvector('simple', coalesce(caption, '')) @@ to_tsquery('simple', $${facetParam}) THEN ${captionWeight}` : ''}
+                            ELSE 0
+                        END
+                    `);
+                    facetTitleScoreParts.push(`
+                        CASE
+                            WHEN to_tsvector('simple', coalesce(title, '')) @@ to_tsquery('simple', $${facetParam}) THEN ${weight}
+                            ELSE 0
+                        END
+                    `);
+                });
+            }
+
+            const facetScoreSelect = facetScoreParts.length > 0
+                ? `(${facetScoreParts.join(' + ')})::REAL AS facet_score`
+                : `0::REAL AS facet_score`;
+            const facetTitleScoreSelect = facetTitleScoreParts.length > 0
+                ? `(${facetTitleScoreParts.join(' + ')})::REAL AS facet_title_score`
+                : `0::REAL AS facet_title_score`;
+            const activeOrderClause = relevanceSortActive
+                ? `ORDER BY ${mode === 'advanced' ? 'facet_title_score DESC, facet_score DESC, ' : ''}search_rank DESC, date_published DESC NULLS LAST`
+                : defaultOrderClause;
+
+            if (canUseProfileFilter) {
+                if (hideUsed) {
+                    dataConditions.push(`NOT ${appendUsedPredicate(dataParams, profileId, userEmail)}`);
+                } else {
+                    usedSelect = `${appendUsedPredicate(dataParams, profileId, userEmail)} AS is_used`;
+                }
+            }
+
+            const dataWhereClause = dataConditions.length > 0 ? `WHERE ${dataConditions.join(' AND ')}` : '';
+            const limitParam = dataParams.length + 1;
+            const offsetParam = dataParams.length + 2;
+
+            const dataSql = `
+                SELECT
+                    title,
+                    url,
+                    channel_name,
+                    views,
+                    date_published,
+                    thumbnail,
+                    created_at,
+                    summary,
+                    video_key,
+                    COALESCE((
+                        SELECT cs.status
+                        FROM channel_sources cs
+                        WHERE lower(btrim(cs.channel_name)) = lower(btrim(videos.channel_name))
+                        ORDER BY CASE WHEN cs.status = 'copyright' THEN 0 ELSE 1 END
+                        LIMIT 1
+                    ), 'normal') AS channel_status,
+                    ${rankSelect},
+                    ${facetScoreSelect},
+                    ${facetTitleScoreSelect},
+                    ${usedSelect}
+                FROM videos
+                ${dataWhereClause}
+                ${activeOrderClause}
+                LIMIT $${limitParam} OFFSET $${offsetParam}
+            `;
+            dataParams.push(pageSize, offset);
+
+            const dataResult = await db.query(dataSql, dataParams);
+            return { rows: dataResult.rows, totalCount };
+        };
+
+        let result = await runVideoQuery(params);
+        if (advancedSearchMeta) {
+            advancedSearchMeta.strict_total = result.totalCount;
+        }
+
+        const canRelaxAdvancedSearch = (
+            mode === 'advanced'
+            && ftsParamPosition >= 0
+            && relaxedAdvancedTsQuery
+            && relaxedAdvancedTsQuery !== params[ftsParamPosition]
+            && result.totalCount === 0
+        );
+
+        if (canRelaxAdvancedSearch) {
+            const relaxedParams = [...params];
+            relaxedParams[ftsParamPosition] = relaxedAdvancedTsQuery;
+            result = await runVideoQuery(relaxedParams);
+            if (advancedSearchMeta) {
+                advancedSearchMeta.relaxed = true;
+                advancedSearchMeta.strategy = 'relaxed_phrase';
+                advancedSearchMeta.effective_query = relaxedAdvancedTsQuery;
+                advancedSearchMeta.relaxed_total = result.totalCount;
+            }
+        }
+
+        const reducedCandidate = advancedEffectivePlan?.groups?.length > 2
+            ? dropWeakestAdvancedFacet(advancedEffectivePlan, advancedSearchMeta?.facet_match_counts || [])
+            : null;
+        if (mode === 'advanced' && result.totalCount === 0 && ftsParamPosition >= 0 && reducedCandidate?.plan) {
+            const reducedTsQuery = buildRelaxedAdvancedSearchTsQuery(reducedCandidate.plan) || buildAdvancedSearchTsQuery(reducedCandidate.plan);
+            if (reducedTsQuery && reducedTsQuery !== params[ftsParamPosition]) {
+                const reducedParams = [...params];
+                reducedParams[ftsParamPosition] = reducedTsQuery;
+                const reducedResult = await runVideoQuery(reducedParams);
+                if (advancedSearchMeta) {
+                    advancedSearchMeta.reduced_query = reducedTsQuery;
+                    advancedSearchMeta.reduced_total = reducedResult.totalCount;
+                    advancedSearchMeta.reduced_dropped_facet = reducedCandidate.droppedFacet;
+                }
+                if (reducedResult.totalCount > 0) {
+                    result = reducedResult;
+                    if (advancedSearchMeta) {
+                        advancedSearchMeta.relaxed = true;
+                        advancedSearchMeta.strategy = 'drop_weakest_facet';
+                        advancedSearchMeta.effective_query = reducedTsQuery;
+                        advancedSearchMeta.dropped_facets = [
+                            ...(advancedSearchMeta.dropped_facets || []),
+                            reducedCandidate.droppedFacet,
+                        ];
+                    }
+                }
+            }
+        }
+
+        if (mode === 'advanced' && result.totalCount === 0 && ftsParamPosition >= 0 && advancedEffectivePlan?.groups?.length > 1) {
+            const optionalTsQuery = buildOptionalAdvancedSearchTsQuery(advancedEffectivePlan);
+            if (optionalTsQuery && optionalTsQuery !== params[ftsParamPosition]) {
+                const optionalParams = [...params];
+                optionalParams[ftsParamPosition] = optionalTsQuery;
+                const optionalResult = await runVideoQuery(optionalParams);
+                if (advancedSearchMeta) {
+                    advancedSearchMeta.optional_query = optionalTsQuery;
+                    advancedSearchMeta.optional_total = optionalResult.totalCount;
+                }
+                if (optionalResult.totalCount > 0) {
+                    result = optionalResult;
+                    if (advancedSearchMeta) {
+                        advancedSearchMeta.relaxed = true;
+                        advancedSearchMeta.strategy = 'optional_or';
+                        advancedSearchMeta.effective_query = optionalTsQuery;
+                    }
+                }
+            }
+        }
+
+        const formatted = result.rows.map(r => ({
+            'Title': r.title || '',
+            'URL': r.url || '',
+            'Channel Name': r.channel_name || '',
+            'Views': r.views || 0,
+            'Date Published': r.date_published || '',
+            'Thumbnail': r.thumbnail || '',
+            'Summary': r.summary || '',
+            'Video Key': r.video_key || '',
+            'Channel Status': r.channel_status || 'normal',
+            'Used': Boolean(r.is_used),
+            'Search Rank': Number(r.search_rank || 0),
+            'Facet Score': Number(r.facet_score || 0),
+            'Facet Title Score': Number(r.facet_title_score || 0),
+        }));
+
+        return [formatted, result.totalCount, null, advancedSearchMeta];
     } catch (e) {
         console.error(`❌ Local DB Error: ${e.message}`);
-        return [[], 0, e.message];
+        return [[], 0, e.message, advancedSearchMeta];
     }
 }
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Youtube, ArrowUp, Search, Filter, X, Plus, Languages, AlertTriangle, MoreHorizontal, Flag } from 'lucide-react';
+import { Youtube, ArrowUp, Search, Filter, X, Plus, Languages, AlertTriangle, MoreHorizontal, Flag, Sparkles } from 'lucide-react';
 import SearchCat from './SearchCat';
 
 
@@ -139,12 +139,15 @@ const DataTable = ({
 
     const [searchTags, setSearchTags] = useState([]);
     const [appliedTags, setAppliedTags] = useState([]);
+    const [appliedAdvancedSearch, setAppliedAdvancedSearch] = useState(null);
+    const [aiTopicLoading, setAiTopicLoading] = useState(false);
+    const [aiTopicError, setAiTopicError] = useState('');
     const [appliedFilters, setAppliedFilters] = useState({});
     const [isInitialized, setIsInitialized] = useState(true);
     const abortControllerRef = useRef(null);
     const progressIntervalRef = useRef(null);
     const [inputValue, setInputValue] = useState('');
-    const [sortConfig, setSortConfig] = useState({ key: 'date_published', direction: 'desc' });
+    const [sortConfig, setSortConfig] = useState({ key: 'date_published', direction: 'desc', userSelected: false });
 
     // Autocomplete state
     const [suggestions, setSuggestions] = useState([]);
@@ -258,7 +261,7 @@ const DataTable = ({
 
     // Gọi fetch khi trang, từ khóa hoặc sắp xếp thay đổi
     useEffect(() => {
-        const query = appliedTags.join(',');
+        const query = appliedAdvancedSearch?.displayQuery || appliedTags.join(',');
         const usageFilterChanged = lastUsageFilterKeyRef.current !== usageFilterKey;
         if (usageFilterChanged) {
             lastUsageFilterKeyRef.current = usageFilterKey;
@@ -283,13 +286,14 @@ const DataTable = ({
             query,
             page,
             sortConfig,
-            searchMode,
+            appliedAdvancedSearch ? 'advanced' : searchMode,
             appliedFilters,
             captionSearchEnabled,
             activeProfile?.id || null,
-            Boolean(hideUsedEnabled && activeProfile?.id)
+            Boolean(hideUsedEnabled && activeProfile?.id),
+            appliedAdvancedSearch?.plan || null
         );
-    }, [appliedTags, page, sortConfig, appliedFilters, captionSearchEnabled, usageFilterKey]);
+    }, [appliedTags, appliedAdvancedSearch, page, sortConfig, appliedFilters, captionSearchEnabled, usageFilterKey]);
 
     // Lấy danh sách kênh khi component mount
     useEffect(() => {
@@ -352,7 +356,8 @@ const DataTable = ({
         filters = {},
         captionSearch = false,
         profileId = null,
-        hideUsed = false
+        hideUsed = false,
+        advancedQuery = null
     ) => {
         // Chỉ abort request cũ khi tải trang 1 (tải lại từ đầu)
         if (pageNum === 1) {
@@ -400,7 +405,8 @@ const DataTable = ({
         setError(null);
 
         try {
-            const sortParam = sort.key || 'date_published';
+            const hasActiveSearch = Boolean(query?.trim() || (mode === 'advanced' && advancedQuery));
+            const sortParam = hasActiveSearch && !sort.userSelected ? 'relevance' : (sort.key || 'date_published');
             const orderParam = sort.direction;
 
             // Build filter query params
@@ -414,6 +420,9 @@ const DataTable = ({
             }
             if (profileId) {
                 filterParams += `&profile_id=${encodeURIComponent(profileId)}&hide_used=${hideUsed ? '1' : '0'}`;
+            }
+            if (mode === 'advanced' && advancedQuery) {
+                filterParams += `&advanced_query=${encodeURIComponent(JSON.stringify(advancedQuery))}`;
             }
 
             const url = `${API_BASE}/api/data?page=${pageNum}&size=${pageSize}${query ? `&q=${encodeURIComponent(query)}` : ''}&sort=${encodeURIComponent(sortParam)}&order=${orderParam}&mode=${mode}${filterParams}&caption_search=${captionSearch ? '1' : '0'}`;
@@ -474,12 +483,56 @@ const DataTable = ({
             setInputValue('');
         }
         setAppliedTags(newTags);
+        setAppliedAdvancedSearch(null);
+        setAiTopicError('');
         setPage(1);
         // Cancel any pending debounced fetch and in-flight request
         if (suggestionsDebounceRef.current) clearTimeout(suggestionsDebounceRef.current);
         if (suggestionsAbortRef.current) suggestionsAbortRef.current.abort();
         setShowSuggestions(false);
         setSuggestions([]);
+    };
+
+    const handleGenerateTopicSearch = async () => {
+        const topic = (inputValue.trim() || searchTags.join(' ')).trim();
+        if (!topic) {
+            setAiTopicError('Nhập chủ đề trước khi tạo bộ từ khóa AI.');
+            return;
+        }
+
+        setAiTopicLoading(true);
+        setAiTopicError('');
+
+        try {
+            const response = await fetch(`${API_BASE}/api/search/topic`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ topic }),
+            });
+            const result = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Không tạo được bộ từ khóa AI.');
+            }
+
+            const terms = Array.isArray(result.terms) ? result.terms : [];
+            setSearchTags(terms);
+            setAppliedTags(terms);
+            setAppliedAdvancedSearch({
+                topic: result.topic || topic,
+                displayQuery: result.displayQuery || terms.join(','),
+                plan: result.plan,
+                warning: result.warning || '',
+            });
+            setInputValue('');
+            setPage(1);
+            setShowSuggestions(false);
+            setSuggestions([]);
+        } catch (err) {
+            setAiTopicError(err.message || 'Không tạo được bộ từ khóa AI.');
+        } finally {
+            setAiTopicLoading(false);
+        }
     };
 
     const addTag = (val) => {
@@ -669,7 +722,7 @@ const DataTable = ({
         if (sortConfig.key === key && sortConfig.direction === 'asc') {
             direction = 'desc';
         }
-        setSortConfig({ key, direction });
+        setSortConfig({ key, direction, userSelected: true });
         setPage(1); // Reset về trang 1 khi đổi sắp xếp
     };
 
@@ -699,6 +752,8 @@ const DataTable = ({
         setSelectedChannels(availableChannels);
         setAppliedTags([]);
         setSearchTags([]);
+        setAppliedAdvancedSearch(null);
+        setAiTopicError('');
         setPage(1);
         setAppliedFilters({});
     };
@@ -1388,6 +1443,16 @@ const DataTable = ({
                                 nhấn , hoặc Enter ↵
                             </span>
                             <button
+                                type="button"
+                                className="ai-topic-button"
+                                onClick={handleGenerateTopicSearch}
+                                disabled={aiTopicLoading}
+                                title="AI tạo bộ từ khóa nâng cao từ chủ đề đang nhập"
+                            >
+                                <Sparkles size={16} />
+                                <span>{aiTopicLoading ? 'Đang tạo' : 'AI chủ đề'}</span>
+                            </button>
+                            <button
                                 onClick={handleSearch}
                                 style={{
                                     background: 'var(--primary-color)',
@@ -1418,12 +1483,43 @@ const DataTable = ({
                     {profileControl}
 
                     <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
-                        {appliedTags.length > 0
+                        {appliedAdvancedSearch
+                            ? `AI tìm thấy ${totalResults.toLocaleString()} kết quả`
+                            : appliedTags.length > 0
                             ? `Tìm thấy ${totalResults.toLocaleString()} kết quả`
                             : `Tổng cộng ${totalResults.toLocaleString()} video`
                         }
                     </span>
                 </div>
+
+                {(appliedAdvancedSearch || aiTopicError) && (
+                    <div className={`advanced-search-summary ${aiTopicError ? 'error' : ''}`}>
+                        <Sparkles size={16} />
+                        {aiTopicError ? (
+                            <span>{aiTopicError}</span>
+                        ) : (
+                            <>
+                                <div>
+                                    <strong>Tìm nâng cao bằng AI</strong>
+                                    <span>{appliedAdvancedSearch.displayQuery}</span>
+                                    {appliedAdvancedSearch.warning && (
+                                        <em>{appliedAdvancedSearch.warning}</em>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setAppliedAdvancedSearch(null);
+                                        setAiTopicError('');
+                                        setPage(1);
+                                    }}
+                                >
+                                    Tắt
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )}
 
 
                 {loading && (
