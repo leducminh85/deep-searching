@@ -79,7 +79,6 @@ export default function AdminBackupsPage() {
                 <div>
                     <p className="admin-eyebrow">Sao lưu</p>
                     <h2>Sao lưu & phục hồi dữ liệu</h2>
-                    <p>Xuất dữ liệu kênh và video ra JSON, sau đó có thể import lại bằng cơ chế upsert an toàn.</p>
                 </div>
             </section>
 
