@@ -144,7 +144,7 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
   };
 
   return (
-    <div className="container">
+    <div className="container search-page">
       <Joyride
         steps={tourSteps}
         run={runTour}

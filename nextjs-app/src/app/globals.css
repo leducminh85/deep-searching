@@ -56,6 +56,59 @@ body {
   padding: 1.5rem 2rem;
 }
 
+.search-page {
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-page .header {
+  flex: 0 0 auto;
+  margin-bottom: 1rem;
+  top: 0;
+}
+
+.search-page main {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.search-page .table-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.search-page .table-wrapper {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+  overscroll-behavior: contain;
+}
+
+.search-page .table-wrapper thead {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.search-page .table-wrapper th {
+  position: sticky;
+  top: 0;
+  z-index: 31;
+  background: color-mix(in srgb, var(--bg-color) 88%, var(--surface-color));
+  box-shadow: 0 1px 0 var(--glass-border), 0 10px 16px rgba(15, 23, 42, 0.22);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .header {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);

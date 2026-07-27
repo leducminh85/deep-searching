@@ -16,6 +16,9 @@ const canHighlightMatch = (text, start, end) => {
 };
 
 const DISPLAY_DATE_OFFSET_MINUTES = 7 * 60;
+const NUMBER_FORMAT_LOCALE = 'vi-VN';
+
+const formatCount = (value) => Number(value || 0).toLocaleString(NUMBER_FORMAT_LOCALE);
 
 const formatDateParts = (year, month, day) => {
     const dd = String(day).padStart(2, '0');
@@ -414,6 +417,7 @@ const DataTable = ({
     const seenSuggestionsRef = useRef(new Set());
     const localIndexRef = useRef(null); // Pre-loaded keyword+channel index for instant local filtering
     const suggestionsCacheRef = useRef(new Map()); // Client-side cache for API results
+    const tableScrollRef = useRef(null);
     const [visibleRows, setVisibleRows] = useState(50);
     const [showScrollTop, setShowScrollTop] = useState(false);
 
@@ -642,6 +646,8 @@ const DataTable = ({
         }
 
         if (pageNum === 1) {
+            tableScrollRef.current?.scrollTo({ top: 0, left: 0 });
+            setShowScrollTop(false);
             setLoading(true);
             setData([]);
             setProgress(0);
@@ -1196,16 +1202,6 @@ const DataTable = ({
         [appliedAdvancedSearch, appliedTags]
     );
 
-    useEffect(() => {
-        // Initial fetch handled by the other useEffect depending on appliedTags
-
-        const handleGlobalScroll = () => {
-            setShowScrollTop(window.scrollY > 400);
-        };
-        window.addEventListener('scroll', handleGlobalScroll);
-        return () => window.removeEventListener('scroll', handleGlobalScroll);
-    }, []);
-
     // Auto-scroll to first highlight in each cell when searching
     useEffect(() => {
         if (!highlightEnabled || activeHighlightTerms.length === 0 || loading) return;
@@ -1228,10 +1224,16 @@ const DataTable = ({
         return () => clearTimeout(timer);
     }, [activeHighlightTerms, visibleRows, highlightEnabled, loading, data]);
 
-    // Infinite scroll effect
+    // Fill the table viewport if the current batch is shorter than the scroll area.
     useEffect(() => {
         const handleAutoLoad = () => {
-            if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 800) {
+            const scrollElement = tableScrollRef.current;
+            if (!scrollElement) return;
+
+            const { scrollTop, clientHeight, scrollHeight } = scrollElement;
+            setShowScrollTop(scrollTop > 400);
+
+            if (scrollHeight - scrollTop <= clientHeight + 800) {
                 if (visibleRows < sortedData.length) {
                     setVisibleRows(prev => Math.min(prev + 30, sortedData.length));
                 } else if (hasMore && !loading && !loadingMore && !isRequestPendingRef.current) {
@@ -1241,21 +1243,25 @@ const DataTable = ({
                 }
             }
         };
-        window.addEventListener('scroll', handleAutoLoad);
-        return () => window.removeEventListener('scroll', handleAutoLoad);
+
+        handleAutoLoad();
     }, [visibleRows, sortedData.length, hasMore, loading, loadingMore, page]);
 
     const handleScroll = (e) => {
         const { scrollTop, clientHeight, scrollHeight } = e.target;
+        setShowScrollTop(scrollTop > 400);
         if (scrollHeight - scrollTop <= clientHeight + 50) {
             if (visibleRows < sortedData.length) {
                 setVisibleRows(prev => Math.min(prev + 30, sortedData.length));
+            } else if (hasMore && !loading && !loadingMore && !isRequestPendingRef.current) {
+                isRequestPendingRef.current = true;
+                setPage(prev => prev + 1);
             }
         }
     };
 
     const scrollToTop = () => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        tableScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const openChannelActionMenu = () => {
@@ -1668,12 +1674,12 @@ const DataTable = ({
 
                         {appliedFilters.minViews && (
                             <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
-                                Views ⏶ {Number(appliedFilters.minViews).toLocaleString()}
+                                Views ⏶ {formatCount(appliedFilters.minViews)}
                             </div>
                         )}
                         {appliedFilters.maxViews && (
                             <div className="filter-tag" style={{ background: 'var(--glass-bg)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--primary-color)', color: 'var(--text-color)' }}>
-                                Views ⏷ {Number(appliedFilters.maxViews).toLocaleString()}
+                                Views ⏷ {formatCount(appliedFilters.maxViews)}
                             </div>
                         )}
                         {appliedFilters.startDate && (
@@ -1892,10 +1898,10 @@ const DataTable = ({
 
                     <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
                         {appliedAdvancedSearch
-                            ? `AI tìm thấy ${totalResults.toLocaleString()} kết quả`
+                            ? `AI tìm thấy ${formatCount(totalResults)} kết quả`
                             : appliedTags.length > 0
-                            ? `Tìm thấy ${totalResults.toLocaleString()} kết quả`
-                            : `Tổng cộng ${totalResults.toLocaleString()} video`
+                            ? `Tìm thấy ${formatCount(totalResults)} kết quả`
+                            : `Tổng cộng ${formatCount(totalResults)} video`
                         }
                     </span>
                 </div>
@@ -1969,7 +1975,7 @@ const DataTable = ({
 
                 {!loading && !error && (
                     <>
-                        <div className="table-wrapper">
+                        <div className="table-wrapper" ref={tableScrollRef} onScroll={handleScroll}>
                             <table>
                                 <thead>
                                     <tr>
