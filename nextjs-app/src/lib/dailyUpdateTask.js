@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { getPool } from './localDb';
 import { listAdminChannels } from './adminDb';
@@ -8,8 +9,70 @@ const MAX_LOGS = 1200;
 const DEFAULT_ANALYSIS_LIMIT = 10000;
 const DEFAULT_ANALYSIS_BATCH_SIZE = 100;
 const DEFAULT_CHANNEL_SYNC_CONCURRENCY = 4;
+const DAILY_LOG_TIME_ZONE = process.env.DAILY_LOG_TIME_ZONE || 'Asia/Bangkok';
+const DAILY_LOG_DIR = path.join(process.cwd(), 'data');
+const DAILY_LOG_PATH = path.join(DAILY_LOG_DIR, 'daily-log.json');
 
-function createInitialState() {
+function currentDailyLogDateKey(date = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: DAILY_LOG_TIME_ZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(date);
+
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+}
+
+function writeDailyLogFile(logs) {
+    try {
+        fs.mkdirSync(DAILY_LOG_DIR, { recursive: true });
+        const payload = {
+            date: currentDailyLogDateKey(),
+            time_zone: DAILY_LOG_TIME_ZONE,
+            updated_at: new Date().toISOString(),
+            logs,
+        };
+        const tempPath = `${DAILY_LOG_PATH}.tmp`;
+        fs.writeFileSync(tempPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+        fs.renameSync(tempPath, DAILY_LOG_PATH);
+    } catch (err) {
+        console.error('Failed to write daily update log file:', err);
+    }
+}
+
+function readDailyLogFile() {
+    try {
+        if (!fs.existsSync(DAILY_LOG_PATH)) return null;
+        return JSON.parse(fs.readFileSync(DAILY_LOG_PATH, 'utf8'));
+    } catch (err) {
+        console.error('Failed to read daily update log file:', err);
+        return null;
+    }
+}
+
+function readTodayDailyLogs() {
+    const today = currentDailyLogDateKey();
+    const payload = readDailyLogFile();
+    if (!payload) return [];
+
+    if (payload.date !== today) {
+        writeDailyLogFile([]);
+        return [];
+    }
+
+    return Array.isArray(payload.logs) ? payload.logs.slice(-MAX_LOGS) : [];
+}
+
+function resetDailyLogFile() {
+    writeDailyLogFile([]);
+}
+
+function createInitialState({ loadLogs = true } = {}) {
+    const logs = loadLogs ? readTodayDailyLogs() : [];
+    const maxLogId = logs.reduce((max, entry) => Math.max(max, Number(entry.id || 0)), 0);
+
     return {
         running: false,
         status: 'idle',
@@ -28,8 +91,8 @@ function createInitialState() {
             analysisDone: 0,
             analysisTotal: 0,
         },
-        logs: [],
-        nextLogId: 1,
+        logs,
+        nextLogId: maxLogId + 1,
         promise: null,
     };
 }
@@ -48,6 +111,7 @@ function addLog(level, message) {
     if (globalState.logs.length > MAX_LOGS) {
         globalState.logs.splice(0, globalState.logs.length - MAX_LOGS);
     }
+    writeDailyLogFile(globalState.logs);
     return entry;
 }
 
@@ -56,11 +120,12 @@ function setProgress(patch) {
 }
 
 function resetState() {
-    const fresh = createInitialState();
+    const fresh = createInitialState({ loadLogs: false });
     for (const key of Object.keys(fresh)) {
         if (key !== 'nextLogId') globalState[key] = fresh[key];
     }
     globalState.logs = [];
+    resetDailyLogFile();
 }
 
 function publicStatus(sinceLogId = 0) {
@@ -198,6 +263,10 @@ async function updateVideoAnalysis(result) {
     `, params);
 }
 
+function isFinalAnalysisResult(result) {
+    return result?.status !== 'caption_fetched';
+}
+
 function getPythonCommand() {
     return process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
 }
@@ -252,6 +321,7 @@ function handleWorkerRecord(kind, payload, context) {
         context.updateChain = context.updateChain
             .then(() => updateVideoAnalysis(payload))
             .then(() => {
+                if (!isFinalAnalysisResult(payload)) return;
                 context.done += 1;
                 const nextDone = globalState.progress.analysisDone + 1;
                 setProgress({

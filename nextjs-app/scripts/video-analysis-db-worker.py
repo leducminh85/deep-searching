@@ -11,6 +11,7 @@ import yt_dlp
 
 MODEL = os.getenv("V3_OLLAMA_MODEL") or os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 ANALYSIS_VERSION = "v3-qwen2.5-7b-detailed"
+MIN_CAPTION_CHARS = int(os.getenv("V3_MIN_CAPTION_CHARS", "50"))
 MIN_SUMMARY_WORDS = int(os.getenv("V3_MIN_SUMMARY_WORDS", "180"))
 MAX_AI_RETRIES = int(os.getenv("DB_ANALYSIS_MAX_AI_RETRIES", "3"))
 MAX_WORKERS = int(os.getenv("DB_ANALYSIS_MAX_WORKERS", "1"))
@@ -305,7 +306,7 @@ Transcript:
 
 
 def generate_summary(caption_text, video_id, title="", channel_name="", published_at=""):
-    if not caption_text or caption_text == "#" or len(str(caption_text).strip()) < 50:
+    if not caption_text or caption_text == "#" or len(str(caption_text).strip()) < MIN_CAPTION_CHARS:
         return ""
 
     prompt = build_prompt(caption_text, title, channel_name, published_at)
@@ -345,6 +346,7 @@ def process_task(task):
         time.sleep(random.uniform(MIN_DELAY_SECONDS, max(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS)))
 
     final_caption = existing_caption
+    fetched_caption_now = False
 
     if not is_bad_summary(existing_summary):
         return {"id": video_id, "status": "skipped"}
@@ -354,6 +356,7 @@ def process_task(task):
         final_caption = fetch_caption(url, video_id)
         if final_caption == "IP_BLOCKED":
             return {"id": video_id, "status": "aborted", "error": "IP_BLOCKED"}
+        fetched_caption_now = True
 
     if not final_caption or final_caption in {"#", "ERROR"}:
         return {
@@ -364,6 +367,24 @@ def process_task(task):
             "analysis_model": None,
             "analysis_version": None,
         }
+
+    if len(str(final_caption).strip()) < MIN_CAPTION_CHARS:
+        log("warning", f"Video {video_id}: captions too short for analysis, ignoring.")
+        return {
+            "id": video_id,
+            "status": "no_caption",
+            "caption": None,
+            "summary": None,
+            "analysis_model": None,
+            "analysis_version": None,
+        }
+
+    if fetched_caption_now:
+        emit("RESULT", {
+            "id": video_id,
+            "status": "caption_fetched",
+            "caption": clean_for_db(final_caption),
+        })
 
     log("info", f"Video {video_id}: generating v3 summary with {MODEL}.")
     final_summary = generate_summary(
