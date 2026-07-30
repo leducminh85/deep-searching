@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { findExistingAdminChannelByUrl, listAdminChannels, upsertAdminChannel } from '../../../../lib/adminDb';
+import { enqueueAdminChannel, findExistingAdminChannelByUrl, listAdminChannels } from '../../../../lib/adminDb';
 import { requireAdmin } from '../../../../lib/adminAuth';
-import { startChannelSync } from '../../../../lib/youtubeChannelSync';
 
 export async function GET() {
     const unauthorized = await requireAdmin();
@@ -30,24 +29,22 @@ export async function POST(request) {
         const existingChannel = await findExistingAdminChannelByUrl(channelUrl);
         if (existingChannel) {
             return NextResponse.json({
-                error: 'Kênh đã tồn tại',
+                error: 'Kênh đã tồn tại trong DB',
                 channel: existingChannel,
             }, { status: 409 });
         }
 
-        const channel = await upsertAdminChannel({
+        const queuedChannel = await enqueueAdminChannel({
             channelName,
             channelUrl,
             status: body.status,
         });
 
-        startChannelSync(channel, channelUrl);
-
         return NextResponse.json({
-            channel,
-            message: 'Đã thêm kênh',
-        }, { status: 202 });
+            queued_channel: queuedChannel,
+            message: queuedChannel?.inserted ? 'Đã thêm kênh vào danh sách chờ' : 'Kênh đã có trong danh sách chờ',
+        }, { status: queuedChannel?.inserted ? 201 : 200 });
     } catch (err) {
-        return NextResponse.json({ error: err.message || 'Không thể thêm kênh' }, { status: 500 });
+        return NextResponse.json({ error: err.message || 'Không thể thêm kênh vào danh sách chờ' }, { status: 500 });
     }
 }

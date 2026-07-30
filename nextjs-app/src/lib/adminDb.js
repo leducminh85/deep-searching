@@ -92,6 +92,18 @@ async function ensureAdminSchemaInternal() {
         )
     `);
 
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS channel_source_queue (
+            id BIGSERIAL PRIMARY KEY,
+            normalized_url TEXT NOT NULL UNIQUE,
+            channel_url TEXT NOT NULL,
+            channel_name TEXT,
+            status TEXT NOT NULL DEFAULT 'normal',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+
     await db.query(`ALTER TABLE channel_sources ADD COLUMN IF NOT EXISTS channel_id TEXT UNIQUE`);
     await db.query(`ALTER TABLE channel_sources ADD COLUMN IF NOT EXISTS channel_url TEXT`);
     await db.query(`ALTER TABLE channel_sources ADD COLUMN IF NOT EXISTS source_channel_url TEXT`);
@@ -107,6 +119,17 @@ async function ensureAdminSchemaInternal() {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_channel_sources_status ON channel_sources(status)`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_channel_sources_channel_name ON channel_sources(channel_name)`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_channel_sources_source_url ON channel_sources(source_channel_url)`);
+    await db.query(`ALTER TABLE channel_source_queue ADD COLUMN IF NOT EXISTS normalized_url TEXT`);
+    await db.query(`ALTER TABLE channel_source_queue ADD COLUMN IF NOT EXISTS channel_name TEXT`);
+    await db.query(`ALTER TABLE channel_source_queue ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'normal'`);
+    await db.query(`ALTER TABLE channel_source_queue ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
+    await db.query(`
+        UPDATE channel_source_queue
+        SET normalized_url = lower(regexp_replace(channel_url, '/(videos|featured|about|shorts|streams)/?$', ''))
+        WHERE normalized_url IS NULL OR normalized_url = ''
+    `);
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_source_queue_normalized_url ON channel_source_queue(normalized_url)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_channel_source_queue_updated_at ON channel_source_queue(updated_at DESC)`);
     await db.query(`
         UPDATE channel_sources
         SET channel_name = btrim(channel_name)
@@ -172,6 +195,11 @@ async function ensureAdminSchemaInternal() {
           AND cs.id IS NULL
         ON CONFLICT DO NOTHING
     `);
+}
+
+function normalizeQueuedChannelUrl(channelUrl) {
+    const lookup = buildChannelLookup(channelUrl);
+    return lookup.variants[0] || String(channelUrl || '').trim().toLowerCase();
 }
 
 function normalizeHeader(value) {
@@ -318,6 +346,93 @@ export async function findExistingAdminChannelByUrl(channelUrl) {
         LIMIT 1
     `, [lookup.variants, lookup.channelId]);
     return result.rows[0] || null;
+}
+
+export async function listQueuedAdminChannels() {
+    await ensureAdminSchema();
+    const db = getPool();
+    const result = await db.query(`
+        SELECT id, channel_url, channel_name, status, created_at, updated_at
+        FROM channel_source_queue
+        ORDER BY updated_at DESC, id DESC
+    `);
+    return result.rows;
+}
+
+export async function findQueuedAdminChannelByUrl(channelUrl) {
+    await ensureAdminSchema();
+    const db = getPool();
+    const normalizedUrl = normalizeQueuedChannelUrl(channelUrl);
+    const result = await db.query(`
+        SELECT id, channel_url, channel_name, status, created_at, updated_at
+        FROM channel_source_queue
+        WHERE normalized_url = $1
+        LIMIT 1
+    `, [normalizedUrl]);
+    return result.rows[0] || null;
+}
+
+export async function enqueueAdminChannel({ channelName = '', channelUrl, status = 'normal' }) {
+    await ensureAdminSchema();
+    const db = getPool();
+    const normalizedUrl = normalizeQueuedChannelUrl(channelUrl);
+    const normalizedName = String(channelName || '').trim();
+    const normalizedStatus = normalizeChannelStatus(status);
+
+    const result = await db.query(`
+        INSERT INTO channel_source_queue (normalized_url, channel_url, channel_name, status, updated_at)
+        VALUES ($1, $2, NULLIF($3, ''), $4, NOW())
+        ON CONFLICT (normalized_url)
+        DO UPDATE SET
+            channel_url = EXCLUDED.channel_url,
+            channel_name = COALESCE(EXCLUDED.channel_name, channel_source_queue.channel_name),
+            status = EXCLUDED.status,
+            updated_at = NOW()
+        RETURNING id, channel_url, channel_name, status, created_at, updated_at, (xmax = 0) AS inserted
+    `, [normalizedUrl, String(channelUrl || '').trim(), normalizedName, normalizedStatus]);
+
+    return result.rows[0] || null;
+}
+
+export async function getQueuedAdminChannel(id) {
+    await ensureAdminSchema();
+    const db = getPool();
+    const result = await db.query(`
+        SELECT id, channel_url, channel_name, status, created_at, updated_at
+        FROM channel_source_queue
+        WHERE id = $1
+    `, [id]);
+    return result.rows[0] || null;
+}
+
+export async function deleteQueuedAdminChannel(id) {
+    await ensureAdminSchema();
+    const db = getPool();
+    const result = await db.query(`
+        DELETE FROM channel_source_queue
+        WHERE id = $1
+        RETURNING id, channel_url, channel_name, status, created_at, updated_at
+    `, [id]);
+    return result.rows[0] || null;
+}
+
+export async function promoteQueuedAdminChannel(id) {
+    const queued = await getQueuedAdminChannel(id);
+    if (!queued) return null;
+
+    const existing = await findExistingAdminChannelByUrl(queued.channel_url);
+    if (existing) {
+        await deleteQueuedAdminChannel(id);
+        return { queued, channel: existing, alreadyExists: true };
+    }
+
+    const channel = await upsertAdminChannel({
+        channelName: queued.channel_name || queued.channel_url,
+        channelUrl: queued.channel_url,
+        status: queued.status,
+    });
+    await deleteQueuedAdminChannel(id);
+    return { queued, channel, alreadyExists: false };
 }
 
 export async function upsertAdminChannel({ channelId = null, channelName, channelUrl = null, channelThumbnail = null, status = 'normal' }) {

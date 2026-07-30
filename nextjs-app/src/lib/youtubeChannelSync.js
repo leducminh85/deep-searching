@@ -267,9 +267,12 @@ export async function syncChannelVideos(channelRow, rawUrl, options = {}) {
     }
 }
 
-async function runChannelSync(channelRow, rawUrl) {
+async function runChannelSync(channelRow, rawUrl, options = {}) {
     try {
-        await syncChannelVideos(channelRow, rawUrl);
+        const result = await syncChannelVideos(channelRow, rawUrl);
+        if (typeof options.afterSync === 'function') {
+            await options.afterSync({ channelRow, result });
+        }
     } catch {
         // syncChannelVideos already recorded channel failure state.
     } finally {
@@ -277,11 +280,11 @@ async function runChannelSync(channelRow, rawUrl) {
     }
 }
 
-export function startChannelSync(channelRow, rawUrl) {
+export function startChannelSync(channelRow, rawUrl, options = {}) {
     const key = String(channelRow.id);
     if (runningJobs.has(key)) return false;
 
-    const job = runChannelSync(channelRow, rawUrl);
+    const job = runChannelSync(channelRow, rawUrl, options);
     runningJobs.set(key, job);
     job.catch(() => {});
     return true;

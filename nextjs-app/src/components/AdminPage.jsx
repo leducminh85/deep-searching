@@ -8,12 +8,14 @@ import {
     CheckCircle2,
     ChevronDown,
     ChevronUp,
+    Clock3,
     Copyright,
     ExternalLink,
     Eye,
     EyeOff,
     Loader2,
     Lock,
+    ListChecks,
     MoreVertical,
     Pencil,
     Plus,
@@ -105,6 +107,11 @@ export default function AdminPage({ embedded = false }) {
     const [dailyStatus, setDailyStatus] = useState(null);
     const [startingDailyUpdate, setStartingDailyUpdate] = useState(false);
     const [dailyLogOpen, setDailyLogOpen] = useState(false);
+    const [queuedChannels, setQueuedChannels] = useState([]);
+    const [loadingQueue, setLoadingQueue] = useState(false);
+    const [queueModalOpen, setQueueModalOpen] = useState(false);
+    const [syncingQueueId, setSyncingQueueId] = useState(null);
+    const [deletingQueueId, setDeletingQueueId] = useState(null);
 
     const toast = error
         ? { type: 'danger', icon: <AlertCircle size={18} />, message: error }
@@ -187,6 +194,25 @@ export default function AdminPage({ embedded = false }) {
         }
     };
 
+    const loadQueuedChannels = async ({ silent = false } = {}) => {
+        if (!silent) setLoadingQueue(true);
+        setError('');
+        try {
+            const response = await fetch('/api/admin/channels/queue');
+            if (response.status === 401) {
+                if (!embedded) setAuthenticated(false);
+                return;
+            }
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Không thể tải danh sách chờ');
+            setQueuedChannels(payload.queue || []);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            if (!silent) setLoadingQueue(false);
+        }
+    };
+
     const loadVideos = async (channelId, page = 1) => {
         if (!channelId) return;
         setVideosState((prev) => ({ ...prev, loading: true }));
@@ -211,6 +237,7 @@ export default function AdminPage({ embedded = false }) {
             setAuthenticated(true);
             setCheckingSession(false);
             loadChannels();
+            loadQueuedChannels();
             return undefined;
         }
 
@@ -220,7 +247,10 @@ export default function AdminPage({ embedded = false }) {
             .then((payload) => {
                 if (!active) return;
                 setAuthenticated(Boolean(payload.authenticated));
-                if (payload.authenticated) loadChannels();
+                if (payload.authenticated) {
+                    loadChannels();
+                    loadQueuedChannels();
+                }
             })
             .finally(() => {
                 if (active) setCheckingSession(false);
@@ -236,7 +266,10 @@ export default function AdminPage({ embedded = false }) {
 
     useEffect(() => {
         if (!authenticated) return undefined;
-        const timer = window.setInterval(() => loadChannels({ silent: true }), 8000);
+        const timer = window.setInterval(() => {
+            loadChannels({ silent: true });
+            loadQueuedChannels({ silent: true });
+        }, 8000);
         return () => window.clearInterval(timer);
     }, [authenticated, selectedChannelId]);
 
@@ -330,6 +363,7 @@ export default function AdminPage({ embedded = false }) {
         setAuthenticated(true);
         setPassword('');
         loadChannels();
+        loadQueuedChannels();
     };
 
     const handleAddChannel = async (event) => {
@@ -348,10 +382,10 @@ export default function AdminPage({ embedded = false }) {
             });
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.error || 'Không thể thêm kênh');
-            setNotice(payload.message || 'Đã thêm kênh');
+            setNotice(payload.message || 'Đã thêm kênh vào danh sách chờ');
             setChannelUrl('');
-            setSelectedChannelId(payload.channel?.id || selectedChannelId);
-            await loadChannels();
+            setQueueModalOpen(true);
+            await loadQueuedChannels();
         } catch (err) {
             setError(err.message);
         } finally {
@@ -438,6 +472,44 @@ export default function AdminPage({ embedded = false }) {
             await loadChannels();
         } catch (err) {
             setError(err.message);
+        }
+    };
+
+    const handleSyncQueuedChannel = async (queuedChannel) => {
+        setSyncingQueueId(queuedChannel.id);
+        setNotice('');
+        setError('');
+        try {
+            const response = await fetch(`/api/admin/channels/queue/${queuedChannel.id}/sync`, { method: 'POST' });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Không thể cập nhật kênh');
+            setNotice(payload.message || 'Đã bắt đầu cập nhật kênh');
+            setSelectedChannelId(payload.channel?.id || selectedChannelId);
+            await Promise.all([
+                loadQueuedChannels({ silent: true }),
+                loadChannels({ silent: true }),
+            ]);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSyncingQueueId(null);
+        }
+    };
+
+    const handleDeleteQueuedChannel = async (queuedChannel) => {
+        setDeletingQueueId(queuedChannel.id);
+        setNotice('');
+        setError('');
+        try {
+            const response = await fetch(`/api/admin/channels/queue/${queuedChannel.id}`, { method: 'DELETE' });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Không thể xóa kênh khỏi danh sách chờ');
+            setNotice(payload.message || 'Đã xóa kênh khỏi danh sách chờ');
+            await loadQueuedChannels({ silent: true });
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setDeletingQueueId(null);
         }
     };
 
@@ -561,6 +633,18 @@ export default function AdminPage({ embedded = false }) {
                         Thêm kênh
                     </button>
                 </form>
+                <button
+                    className="admin-secondary-btn admin-queue-open-btn"
+                    type="button"
+                    onClick={() => {
+                        setQueueModalOpen(true);
+                        loadQueuedChannels();
+                    }}
+                >
+                    {loadingQueue ? <Loader2 className="spin" size={16} /> : <ListChecks size={16} />}
+                    Danh sách chờ
+                    <span>{queuedChannels.length}</span>
+                </button>
                 <div className="admin-search">
                     <Search size={18} />
                     <input
@@ -826,6 +910,78 @@ export default function AdminPage({ embedded = false }) {
                 )}
             </section>
             </div>
+
+            {queueModalOpen && (
+                <div className="modal-overlay admin-modal-overlay" onClick={() => setQueueModalOpen(false)}>
+                    <section className="modal-container admin-modal admin-queue-modal" onClick={(event) => event.stopPropagation()}>
+                        <div className="modal-header admin-modal-header">
+                            <h2>Danh sách kênh chờ cập nhật</h2>
+                            <p>Kênh mới chỉ nằm trong danh sách này. Bấm cập nhật ngay để thêm vào DB và bắt đầu đồng bộ video.</p>
+                        </div>
+
+                        <div className="admin-queue-list">
+                            {loadingQueue ? (
+                                <div className="admin-empty-state">
+                                    <Loader2 className="spin" size={24} />
+                                    <span>Đang tải danh sách chờ</span>
+                                </div>
+                            ) : queuedChannels.length ? (
+                                queuedChannels.map((item) => (
+                                    <div className="admin-queue-row" key={item.id}>
+                                        <div className="admin-queue-main">
+                                            <div className="admin-queue-icon">
+                                                <Clock3 size={18} />
+                                            </div>
+                                            <div>
+                                                <strong>{item.channel_name || item.channel_url}</strong>
+                                                <a href={item.channel_url} target="_blank" rel="noopener noreferrer">
+                                                    {item.channel_url}
+                                                </a>
+                                                <span>Thêm lúc {formatDate(item.created_at)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="admin-queue-actions">
+                                            <button
+                                                className="admin-primary-btn"
+                                                type="button"
+                                                disabled={syncingQueueId === item.id || deletingQueueId === item.id}
+                                                onClick={() => handleSyncQueuedChannel(item)}
+                                            >
+                                                {syncingQueueId === item.id ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
+                                                Cập nhật ngay
+                                            </button>
+                                            <button
+                                                className="admin-secondary-btn danger"
+                                                type="button"
+                                                disabled={syncingQueueId === item.id || deletingQueueId === item.id}
+                                                onClick={() => handleDeleteQueuedChannel(item)}
+                                            >
+                                                {deletingQueueId === item.id ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />}
+                                                Xóa
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="admin-empty-state">
+                                    <ListChecks size={28} />
+                                    <span>Không có kênh nào trong danh sách chờ</span>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="modal-footer">
+                            <button className="modal-btn-cancel" type="button" onClick={() => setQueueModalOpen(false)}>
+                                Đóng
+                            </button>
+                            <button className="modal-btn-confirm" type="button" onClick={() => loadQueuedChannels()} disabled={loadingQueue}>
+                                {loadingQueue ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
+                                Tải lại
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            )}
 
             {editingChannel && (
                 <div className="modal-overlay admin-modal-overlay" onClick={() => setEditingChannel(null)}>
