@@ -94,6 +94,9 @@ function createInitialState({ loadLogs = true } = {}) {
         logs,
         nextLogId: maxLogId + 1,
         promise: null,
+        stopRequested: false,
+        abortController: null,
+        currentAnalysisChild: null,
     };
 }
 
@@ -134,6 +137,7 @@ function publicStatus(sinceLogId = 0) {
         running: globalState.running,
         status: globalState.status,
         phase: globalState.phase,
+        stop_requested: Boolean(globalState.stopRequested),
         started_at: globalState.startedAt,
         finished_at: globalState.finishedAt,
         error: globalState.error,
@@ -141,6 +145,56 @@ function publicStatus(sinceLogId = 0) {
         logs: globalState.logs.filter((entry) => entry.id > since),
         last_log_id: globalState.logs.at(-1)?.id || since,
     };
+}
+
+function createStopError() {
+    const err = new Error('Daily update stopped by admin');
+    err.name = 'AbortError';
+    return err;
+}
+
+function isStopError(err) {
+    return err?.name === 'AbortError' || err?.code === 'ABORT_ERR' || /stopped by admin|aborted/i.test(String(err?.message || ''));
+}
+
+function isStopRequested() {
+    return Boolean(globalState.stopRequested || globalState.abortController?.signal?.aborted);
+}
+
+function throwIfStopRequested() {
+    if (isStopRequested()) throw createStopError();
+}
+
+function terminateChildProcess(child) {
+    if (!child?.pid || child.killed) return;
+
+    if (process.platform === 'win32') {
+        const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+            stdio: 'ignore',
+            windowsHide: true,
+        });
+        killer.on('error', () => {
+            try {
+                child.kill();
+            } catch {
+                // Ignore process termination edge cases.
+            }
+        });
+        return;
+    }
+
+    try {
+        child.kill('SIGTERM');
+        setTimeout(() => {
+            try {
+                if (!child.killed) child.kill('SIGKILL');
+            } catch {
+                // Ignore process termination edge cases.
+            }
+        }, 2500).unref?.();
+    } catch {
+        // Ignore process termination edge cases.
+    }
 }
 
 function isErrorMarker(text) {
@@ -225,6 +279,7 @@ async function getAnalysisBatch(seenIds, size) {
 }
 
 async function updateVideoAnalysis(result) {
+    result = hydrateWorkerPayload(result);
     if (!result?.id || result.status === 'aborted' || result.status === 'skipped') return;
 
     const updates = [];
@@ -261,6 +316,28 @@ async function updateVideoAnalysis(result) {
         SET ${updates.join(', ')}
         WHERE id = $1
     `, params);
+}
+
+function readAndDeleteWorkerPayload(filePath) {
+    const resolved = path.resolve(String(filePath || ''));
+    const text = fs.readFileSync(resolved, 'utf8');
+    fs.rmSync(resolved, { force: true });
+    return text;
+}
+
+function hydrateWorkerPayload(result) {
+    if (!result || typeof result !== 'object') return result;
+    const hydrated = { ...result };
+
+    for (const field of ['caption', 'summary']) {
+        const fileKey = `${field}_file`;
+        if (hydrated[fileKey] && !Object.prototype.hasOwnProperty.call(hydrated, field)) {
+            hydrated[field] = readAndDeleteWorkerPayload(hydrated[fileKey]);
+        }
+        delete hydrated[fileKey];
+    }
+
+    return hydrated;
 }
 
 function isFinalAnalysisResult(result) {
@@ -350,12 +427,12 @@ function parseWorkerLine(line, context) {
         if (!match) {
             const nextTag = remaining.search(/(?:RESULT|LOG)\t/);
             if (nextTag === -1) {
-                addLog('info', remaining);
+                addWorkerFallbackLog(remaining);
                 return;
             }
 
             const prefix = remaining.slice(0, nextTag).trim();
-            if (prefix) addLog('info', prefix);
+            if (prefix) addWorkerFallbackLog(prefix);
             remaining = remaining.slice(nextTag);
             continue;
         }
@@ -366,8 +443,21 @@ function parseWorkerLine(line, context) {
     }
 }
 
+function addWorkerFallbackLog(text) {
+    const value = String(text || '').trim();
+    if (!value) return;
+
+    if (/"(?:caption|summary|caption_file|summary_file)"\s*:/.test(value)) {
+        addLog('warning', 'Worker emitted an incomplete analysis payload; raw caption/summary was hidden.');
+        return;
+    }
+
+    addLog('info', value.length > 500 ? `${value.slice(0, 500)}...` : value);
+}
+
 async function runAnalysisWorkerBatch(batch) {
     if (!batch.length) return 0;
+    throwIfStopRequested();
 
     const scriptPath = path.join(process.cwd(), 'scripts', 'video-analysis-db-worker.py');
     const child = spawn(getPythonCommand(), [scriptPath], {
@@ -379,6 +469,13 @@ async function runAnalysisWorkerBatch(batch) {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
     });
+    globalState.currentAnalysisChild = child;
+    const signal = globalState.abortController?.signal;
+    const abortChild = () => {
+        terminateChildProcess(child);
+    };
+    if (signal?.aborted) abortChild();
+    else signal?.addEventListener('abort', abortChild, { once: true });
 
     const context = { updateChain: Promise.resolve(), done: 0 };
     let stdoutBuffer = '';
@@ -409,18 +506,34 @@ async function runAnalysisWorkerBatch(batch) {
     });
 
     for (const item of batch) {
+        throwIfStopRequested();
         child.stdin.write(`${JSON.stringify(item)}\n`);
     }
     child.stdin.end();
 
-    const exitCode = await new Promise((resolve, reject) => {
-        child.on('error', reject);
-        child.on('close', resolve);
-    });
+    let exitCode = null;
+    try {
+        exitCode = await new Promise((resolve, reject) => {
+            child.on('error', (err) => {
+                if (isStopRequested() && isStopError(err)) resolve(null);
+                else reject(err);
+            });
+            child.on('close', resolve);
+        });
+    } finally {
+        signal?.removeEventListener('abort', abortChild);
+        if (globalState.currentAnalysisChild === child) {
+            globalState.currentAnalysisChild = null;
+        }
+    }
 
     if (stdoutBuffer.trim()) parseWorkerLine(stdoutBuffer, context);
-    if (stderrBuffer.trim()) addLog('danger', stderrBuffer.trim());
+    if (stderrBuffer.trim() && !isStopRequested()) addLog('danger', stderrBuffer.trim());
     await context.updateChain;
+
+    if (isStopRequested()) {
+        throw createStopError();
+    }
 
     if (exitCode === 2) {
         throw new Error(
@@ -437,6 +550,7 @@ async function runAnalysisWorkerBatch(batch) {
 
 async function runDatabaseAnalysis() {
     await ensureAnalysisMetadataSchema();
+    throwIfStopRequested();
     const limit = Math.max(Number(process.env.DAILY_ANALYSIS_LIMIT || DEFAULT_ANALYSIS_LIMIT), 1);
     const batchSize = Math.max(Number(process.env.DAILY_ANALYSIS_BATCH_SIZE || DEFAULT_ANALYSIS_BATCH_SIZE), 1);
     const estimatedTotal = Math.min(await countAnalysisCandidates(), limit);
@@ -454,8 +568,10 @@ async function runDatabaseAnalysis() {
         : 'Không có video nào cần phân tích.');
 
     while (seenIds.size < limit) {
+        throwIfStopRequested();
         const batch = await getAnalysisBatch(seenIds, Math.min(batchSize, limit - seenIds.size));
         if (!batch.length) break;
+        throwIfStopRequested();
         batch.forEach((row) => seenIds.add(Number(row.id)));
         addLog('info', `Bắt đầu batch phân tích ${batch.length} video.`);
         await runAnalysisWorkerBatch(batch);
@@ -468,11 +584,15 @@ async function runChannelSyncQueue(channels) {
 
     async function worker() {
         while (nextIndex < channels.length) {
+            throwIfStopRequested();
             const channel = channels[nextIndex++];
             const url = channel.channel_url || channel.source_channel_url;
             addLog('info', `Đồng bộ video: ${channel.channel_name}`);
             try {
-                const result = await syncChannelVideos(channel, url, { minDurationSeconds: 180 });
+                const result = await syncChannelVideos(channel, url, {
+                    minDurationSeconds: 180,
+                    signal: globalState.abortController?.signal,
+                });
                 setProgress({
                     videosAdded: globalState.progress.videosAdded + Number(result.added || 0),
                     videosUpdated: globalState.progress.videosUpdated + Number(result.updated || 0),
@@ -480,8 +600,10 @@ async function runChannelSyncQueue(channels) {
                 });
                 addLog('success', `${channel.channel_name}: ${result.imported} video hợp lệ, +${result.added} mới, ${result.updated} cập nhật, bỏ qua ${result.skippedShorts} video ngắn.`);
             } catch (err) {
+                if (isStopRequested() || isStopError(err)) throw createStopError();
                 addLog('danger', `${channel.channel_name}: ${err.message || 'Đồng bộ lỗi'}`);
             }
+            throwIfStopRequested();
 
             const channelsDone = globalState.progress.channelsDone + 1;
             setProgress({
@@ -492,53 +614,83 @@ async function runChannelSyncQueue(channels) {
         }
     }
 
+    throwIfStopRequested();
     addLog('info', `Sync kênh chạy ${Math.min(concurrency, channels.length)} luồng song song.`);
-    await Promise.all(Array.from(
+    const results = await Promise.allSettled(Array.from(
         { length: Math.min(concurrency, channels.length) },
         () => worker()
     ));
+    const stopped = results.some((result) => result.status === 'rejected' && isStopError(result.reason));
+    if (stopped || isStopRequested()) throw createStopError();
+
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed) throw failed.reason;
 }
 
-async function runDailyUpdate() {
+async function runDailyUpdate({ mode = 'all' } = {}) {
+    const analysisOnly = mode === 'analysis';
+    globalState.stopRequested = false;
+    globalState.abortController = new AbortController();
     globalState.running = true;
     globalState.status = 'running';
-    globalState.phase = 'sync';
+    globalState.phase = analysisOnly ? 'analysis' : 'sync';
     globalState.startedAt = new Date().toISOString();
     globalState.finishedAt = null;
     globalState.error = null;
-    setProgress({ percent: 1, label: 'Đang tải danh sách kênh' });
-    addLog('info', 'Bắt đầu cập nhật hằng ngày bằng database.');
+    if (analysisOnly) {
+        setProgress({ percent: 1, label: 'Đang chuẩn bị phân tích caption/summary' });
+    }
+    if (!analysisOnly) setProgress({ percent: 1, label: 'Đang tải danh sách kênh' });
+    addLog('info', analysisOnly
+        ? 'Bắt đầu phân tích caption/summary từ database.'
+        : 'Bắt đầu cập nhật hằng ngày bằng database.');
 
     try {
-        const channels = (await listAdminChannels()).filter((channel) => channel.channel_url || channel.source_channel_url);
-        setProgress({
-            channelsTotal: channels.length,
-            channelsDone: 0,
-            label: `Chuẩn bị đồng bộ ${channels.length} kênh`,
-            percent: 2,
-        });
-        addLog('info', `Tìm thấy ${channels.length} kênh có URL trong database.`);
+        throwIfStopRequested();
+        if (!analysisOnly) {
+            const channels = (await listAdminChannels()).filter((channel) => channel.channel_url || channel.source_channel_url);
+            throwIfStopRequested();
+            setProgress({
+                channelsTotal: channels.length,
+                channelsDone: 0,
+                label: `Chuẩn bị đồng bộ ${channels.length} kênh`,
+                percent: 2,
+            });
+            addLog('info', `Tìm thấy ${channels.length} kênh có URL trong database.`);
 
-        await runChannelSyncQueue(channels);
+            await runChannelSyncQueue(channels);
+        }
 
         globalState.phase = 'analysis';
-        setProgress({ label: 'Đang phân tích caption/summary từ database', percent: 55 });
+        setProgress({ label: 'Đang phân tích caption/summary từ database', percent: analysisOnly ? 5 : 55 });
+        throwIfStopRequested();
         await runDatabaseAnalysis();
 
         globalState.status = 'completed';
         globalState.phase = 'completed';
         globalState.finishedAt = new Date().toISOString();
-        setProgress({ percent: 100, label: 'Hoàn tất cập nhật hằng ngày' });
-        addLog('success', 'Hoàn tất cập nhật hằng ngày.');
+        setProgress({ percent: 100, label: analysisOnly ? 'Hoàn tất phân tích caption/summary' : 'Hoàn tất cập nhật hằng ngày' });
+        addLog('success', analysisOnly ? 'Hoàn tất phân tích caption/summary.' : 'Hoàn tất cập nhật hằng ngày.');
     } catch (err) {
-        globalState.status = 'failed';
-        globalState.phase = 'failed';
-        globalState.error = err.message || 'Daily update failed';
+        if (isStopRequested() || isStopError(err)) {
+            globalState.status = 'stopped';
+            globalState.phase = 'stopped';
+            globalState.error = null;
+            setProgress({ label: 'Đã dừng cập nhật an toàn' });
+            addLog('warning', 'Đã dừng tiến trình cập nhật theo yêu cầu.');
+        } else {
+            globalState.status = 'failed';
+            globalState.phase = 'failed';
+            globalState.error = err.message || 'Daily update failed';
+            setProgress({ label: globalState.error });
+            addLog('danger', globalState.error);
+        }
         globalState.finishedAt = new Date().toISOString();
-        setProgress({ label: globalState.error });
-        addLog('danger', globalState.error);
     } finally {
         globalState.running = false;
+        globalState.stopRequested = false;
+        globalState.abortController = null;
+        globalState.currentAnalysisChild = null;
         globalState.promise = null;
     }
 }
@@ -547,13 +699,40 @@ export function getDailyUpdateStatus(sinceLogId = 0) {
     return publicStatus(sinceLogId);
 }
 
-export function startDailyUpdateTask() {
+export function startDailyUpdateTask(options = {}) {
     if (globalState.running) {
         return { started: false, status: publicStatus() };
     }
 
     resetState();
-    globalState.promise = runDailyUpdate();
+    globalState.promise = runDailyUpdate(options);
     globalState.promise.catch(() => {});
     return { started: true, status: publicStatus() };
+}
+
+export function stopDailyUpdateTask() {
+    if (!globalState.running) {
+        return { stopped: false, status: publicStatus() };
+    }
+
+    globalState.stopRequested = true;
+    globalState.status = 'stopping';
+    setProgress({ label: 'Đang dừng tiến trình cập nhật an toàn' });
+    addLog('warning', 'Đã nhận yêu cầu dừng tiến trình cập nhật.');
+
+    try {
+        globalState.abortController?.abort();
+    } catch {
+        // Ignore abort controller edge cases.
+    }
+
+    try {
+        if (globalState.currentAnalysisChild && !globalState.currentAnalysisChild.killed) {
+            terminateChildProcess(globalState.currentAnalysisChild);
+        }
+    } catch {
+        // Ignore process kill edge cases.
+    }
+
+    return { stopped: true, status: publicStatus() };
 }

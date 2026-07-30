@@ -5,6 +5,7 @@ import random
 import re
 import sys
 import time
+import uuid
 
 import ollama
 import yt_dlp
@@ -17,6 +18,9 @@ MAX_AI_RETRIES = int(os.getenv("DB_ANALYSIS_MAX_AI_RETRIES", "3"))
 MAX_WORKERS = int(os.getenv("DB_ANALYSIS_MAX_WORKERS", "1"))
 MIN_DELAY_SECONDS = float(os.getenv("DB_ANALYSIS_MIN_DELAY_SECONDS", "0"))
 MAX_DELAY_SECONDS = float(os.getenv("DB_ANALYSIS_MAX_DELAY_SECONDS", "0"))
+CAPTION_FETCH_ATTEMPTS = max(int(os.getenv("V3_CAPTION_FETCH_ATTEMPTS", "3")), 1)
+PAYLOAD_INLINE_LIMIT = int(os.getenv("DB_ANALYSIS_PAYLOAD_INLINE_LIMIT", "2000"))
+PAYLOAD_DIR = os.getenv("DB_ANALYSIS_PAYLOAD_DIR") or os.path.join(os.getcwd(), "data", "analysis-payloads")
 
 
 def configure_console_encoding():
@@ -33,6 +37,31 @@ configure_console_encoding()
 
 def emit(kind, payload):
     print(f"{kind}\t{json.dumps(payload, ensure_ascii=False)}", flush=True)
+
+
+def externalize_large_result_fields(payload):
+    if not isinstance(payload, dict):
+        return payload
+
+    result = dict(payload)
+    for field in ("caption", "summary"):
+        value = result.get(field)
+        if not isinstance(value, str) or len(value) <= PAYLOAD_INLINE_LIMIT:
+            continue
+
+        os.makedirs(PAYLOAD_DIR, exist_ok=True)
+        file_name = f"worker-{os.getpid()}-{result.get('id', 'unknown')}-{field}-{uuid.uuid4().hex}.txt"
+        file_path = os.path.abspath(os.path.join(PAYLOAD_DIR, file_name))
+        with open(file_path, "w", encoding="utf-8") as handle:
+            handle.write(value)
+        result.pop(field, None)
+        result[f"{field}_file"] = file_path
+
+    return result
+
+
+def emit_result(payload):
+    emit("RESULT", externalize_large_result_fields(payload))
 
 
 def log(level, message):
@@ -122,8 +151,14 @@ def is_bad_v3_summary(summary):
     return len(text.split()) < MIN_SUMMARY_WORDS or not all(section in upper_text for section in required_sections)
 
 
+def strip_invalid_unicode(text):
+    if not isinstance(text, str):
+        return text
+    return text.encode("utf-8", errors="ignore").decode("utf-8", errors="ignore")
+
+
 def sanitize_caption_for_ai(caption_text):
-    caption = str(caption_text or "")
+    caption = strip_invalid_unicode(str(caption_text or ""))
     replacements = [
         (r"\[ __ \]", " "),
         (r"\b(fuck|fucking|shit|bitch|asshole)\b", "profanity"),
@@ -141,6 +176,7 @@ def sanitize_caption_for_ai(caption_text):
 def clean_for_db(text):
     if not isinstance(text, str):
         return text
+    text = strip_invalid_unicode(text)
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", text)
     return text[:60000]
 
@@ -183,59 +219,68 @@ def choose_caption_track(caption_groups):
 def fetch_caption(video_url, video_id):
     cookies_to_try = COOKIE_FILES or [None]
 
-    for cookie_path in cookies_to_try:
-        ydl_opts = {
-            "skip_download": True,
-            "quiet": True,
-            "no_warnings": True,
-            "ignore_no_formats_error": True,
-        }
-        if cookie_path:
-            ydl_opts["cookiefile"] = cookie_path
+    for attempt in range(1, CAPTION_FETCH_ATTEMPTS + 1):
+        saw_caption_track = False
 
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(video_url, download=False)
-            if not info:
-                continue
-
-            selected = choose_caption_track(info.get("subtitles", {}))
-            caption_type = "manual"
-            if not selected:
-                selected = choose_caption_track(info.get("automatic_captions", {}))
-                caption_type = "auto"
-
-            if not selected:
-                continue
-
-            selected_lang, sub_url = selected
-            log("info", f"Video {video_id}: using {caption_type} captions, language={selected_lang}.")
+        for cookie_path in cookies_to_try:
+            ydl_opts = {
+                "skip_download": True,
+                "quiet": True,
+                "no_warnings": True,
+                "ignore_no_formats_error": True,
+            }
+            if cookie_path:
+                ydl_opts["cookiefile"] = cookie_path
 
             try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl2:
-                    sub_data = ydl2.urlopen(sub_url).read().decode("utf-8")
-                parsed = json.loads(sub_data)
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(video_url, download=False)
+                if not info:
+                    continue
+
+                selected = choose_caption_track(info.get("subtitles", {}))
+                caption_type = "manual"
+                if not selected:
+                    selected = choose_caption_track(info.get("automatic_captions", {}))
+                    caption_type = "auto"
+
+                if not selected:
+                    continue
+
+                saw_caption_track = True
+                selected_lang, sub_url = selected
+                log("info", f"Video {video_id}: using {caption_type} captions, language={selected_lang}.")
+
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl2:
+                        sub_data = ydl2.urlopen(sub_url).read().decode("utf-8")
+                    parsed = json.loads(sub_data)
+                except Exception as exc:
+                    err = str(exc)
+                    if "429" in err or "Too Many Requests" in err:
+                        return "IP_BLOCKED"
+                    continue
+
+                text_chunks = []
+                for event in parsed.get("events", []):
+                    for seg in event.get("segs", []):
+                        if "utf8" in seg:
+                            text_chunks.append(seg["utf8"])
+
+                full_text = " ".join("".join(text_chunks).replace("\n", " ").split())
+                return full_text[:45000] if full_text else "#"
             except Exception as exc:
-                err = str(exc)
-                if "429" in err or "Too Many Requests" in err:
+                message = str(exc).lower()
+                if "too many requests" in message or "http error 429" in message:
                     return "IP_BLOCKED"
-                continue
+                if "unavailable" in message or "private" in message or "removed" in message:
+                    log("warning", f"Video {video_id}: unavailable, private, removed, or restricted.")
+                    return "#"
 
-            text_chunks = []
-            for event in parsed.get("events", []):
-                for seg in event.get("segs", []):
-                    if "utf8" in seg:
-                        text_chunks.append(seg["utf8"])
-
-            full_text = " ".join("".join(text_chunks).replace("\n", " ").split())
-            return full_text[:45000] if full_text else "#"
-        except Exception as exc:
-            message = str(exc).lower()
-            if "too many requests" in message or "http error 429" in message:
-                return "IP_BLOCKED"
-            if "unavailable" in message or "private" in message or "removed" in message:
-                log("warning", f"Video {video_id}: unavailable, private, removed, or restricted.")
-                return "#"
+        if attempt < CAPTION_FETCH_ATTEMPTS:
+            reason = "caption track returned empty" if saw_caption_track else "no caption track listed"
+            log("warning", f"Video {video_id}: caption fetch attempt {attempt}/{CAPTION_FETCH_ATTEMPTS} failed ({reason}), retrying.")
+            time.sleep(min(2 * attempt, 5))
 
     log("warning", f"Video {video_id}: no usable captions found.")
     return "#"
@@ -243,6 +288,9 @@ def fetch_caption(video_url, video_id):
 
 def build_prompt(caption_text, title="", channel_name="", published_at=""):
     ai_caption = sanitize_caption_for_ai(caption_text)
+    title = strip_invalid_unicode(str(title or ""))
+    channel_name = strip_invalid_unicode(str(channel_name or ""))
+    published_at = strip_invalid_unicode(str(published_at or ""))
     return f"""
 You are a senior video intelligence analyst building a high-quality searchable research database.
 Your job is NOT to give instructions, advice, encouragement, tactical guidance, or operational details.
@@ -324,7 +372,7 @@ def generate_summary(caption_text, video_id, title="", channel_name="", publishe
                     "top_p": float(os.getenv("V3_OLLAMA_TOP_P", "0.9")),
                 },
             )
-            result = response["message"]["content"].strip()
+            result = strip_invalid_unicode(response["message"]["content"]).strip()
             if not is_bad_v3_summary(result):
                 return result
             log("warning", f"Video {video_id}: AI returned short or invalid v3 format on attempt {attempt}.")
@@ -339,8 +387,8 @@ def generate_summary(caption_text, video_id, title="", channel_name="", publishe
 def process_task(task):
     video_id = task["id"]
     url = task.get("url") or ""
-    existing_caption = task.get("caption") or ""
-    existing_summary = task.get("summary") or ""
+    existing_caption = strip_invalid_unicode(task.get("caption") or "")
+    existing_summary = strip_invalid_unicode(task.get("summary") or "")
 
     if MIN_DELAY_SECONDS or MAX_DELAY_SECONDS:
         time.sleep(random.uniform(MIN_DELAY_SECONDS, max(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS)))
@@ -380,7 +428,7 @@ def process_task(task):
         }
 
     if fetched_caption_now:
-        emit("RESULT", {
+        emit_result({
             "id": video_id,
             "status": "caption_fetched",
             "caption": clean_for_db(final_caption),
@@ -433,7 +481,7 @@ def main():
         futures = [executor.submit(process_task, task) for task in tasks]
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
-            emit("RESULT", result)
+            emit_result(result)
             if result.get("status") == "aborted":
                 aborted = True
 

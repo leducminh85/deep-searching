@@ -23,6 +23,7 @@ import {
     RefreshCcw,
     Search,
     ShieldCheck,
+    Square,
     Terminal,
     Trash2,
     Video,
@@ -513,17 +514,45 @@ export default function AdminPage({ embedded = false }) {
         }
     };
 
-    const handleStartDailyUpdate = async () => {
+    const handleStartDailyUpdate = async (mode = 'all') => {
         setStartingDailyUpdate(true);
         setNotice('');
         setError('');
         try {
-            const response = await fetch('/api/admin/daily-update', { method: 'POST' });
+            const response = await fetch('/api/admin/daily-update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode }),
+            });
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.error || 'Không thể bắt đầu cập nhật');
             setDailyStatus(payload);
             setDailyLogOpen(true);
-            setNotice(payload.started ? 'Đã bắt đầu cập nhật hằng ngày' : 'Task cập nhật đang chạy');
+            setNotice(payload.started
+                ? (mode === 'analysis' ? 'Đã bắt đầu phân tích caption/summary' : 'Đã bắt đầu cập nhật tất cả')
+                : 'Task cập nhật đang chạy');
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setStartingDailyUpdate(false);
+        }
+    };
+
+    const handleStopDailyUpdate = async () => {
+        setStartingDailyUpdate(true);
+        setNotice('');
+        setError('');
+        try {
+            const response = await fetch('/api/admin/daily-update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'stop' }),
+            });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Không thể dừng cập nhật');
+            setDailyStatus(payload);
+            setDailyLogOpen(true);
+            setNotice(payload.stopped ? 'Đã gửi yêu cầu dừng tiến trình cập nhật' : 'Không có tiến trình cập nhật đang chạy');
         } catch (err) {
             setError(err.message);
         } finally {
@@ -654,15 +683,49 @@ export default function AdminPage({ embedded = false }) {
                     />
                 </div>
                 <div className="admin-daily-update">
-                    <button
-                        className="admin-primary-btn"
-                        type="button"
-                        onClick={handleStartDailyUpdate}
-                        disabled={startingDailyUpdate || dailyStatus?.running}
-                    >
-                        {startingDailyUpdate || dailyStatus?.running ? <Loader2 className="spin" size={18} /> : <PlayCircle size={18} />}
-                        Cập nhật
-                    </button>
+                    <div className="admin-update-hub">
+                        <button
+                            className="admin-primary-btn admin-update-main-btn"
+                            type="button"
+                            disabled={startingDailyUpdate}
+                        >
+                            {startingDailyUpdate || dailyStatus?.running ? <Loader2 className="spin" size={18} /> : <PlayCircle size={18} />}
+                            {dailyStatus?.running ? 'Đang chạy' : 'Cập nhật'}
+                            <ChevronDown size={15} />
+                        </button>
+                        <div className="admin-update-menu">
+                            {dailyStatus?.running && (
+                                <button
+                                    className="danger"
+                                    type="button"
+                                    disabled={startingDailyUpdate}
+                                    onClick={handleStopDailyUpdate}
+                                >
+                                    <Square size={16} />
+                                    <span>Stop</span>
+                                    <small>Dừng fetch và phân tích an toàn</small>
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                disabled={startingDailyUpdate || dailyStatus?.running}
+                                onClick={() => handleStartDailyUpdate('analysis')}
+                            >
+                                <RefreshCcw size={16} />
+                                <span>Phân tích</span>
+                                <small>Fetch caption và phân tích video đã có</small>
+                            </button>
+                            <button
+                                type="button"
+                                disabled={startingDailyUpdate || dailyStatus?.running}
+                                onClick={() => handleStartDailyUpdate('all')}
+                            >
+                                <PlayCircle size={16} />
+                                <span>All</span>
+                                <small>Fetch video, caption và phân tích</small>
+                            </button>
+                        </div>
+                    </div>
                     <button
                         className="admin-secondary-btn"
                         type="button"
@@ -1085,7 +1148,7 @@ export default function AdminPage({ embedded = false }) {
                             <button
                                 className="modal-btn-confirm"
                                 type="button"
-                                onClick={handleStartDailyUpdate}
+                                onClick={() => handleStartDailyUpdate('all')}
                                 disabled={startingDailyUpdate || dailyStatus?.running}
                             >
                                 {dailyStatus?.running ? 'Đang chạy' : 'Chạy lại'}

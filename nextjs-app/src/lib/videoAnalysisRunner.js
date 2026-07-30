@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { markChannelSyncState } from './adminDb';
 import { getPool } from './localDb';
@@ -89,6 +90,7 @@ async function getChannelAnalysisBatch(channelName, seenIds, size) {
 }
 
 async function updateVideoAnalysis(result) {
+    result = hydrateWorkerPayload(result);
     if (!result?.id || result.status === 'aborted' || result.status === 'skipped') return;
 
     const updates = [];
@@ -125,6 +127,28 @@ async function updateVideoAnalysis(result) {
         SET ${updates.join(', ')}
         WHERE id = $1
     `, params);
+}
+
+function readAndDeleteWorkerPayload(filePath) {
+    const resolved = path.resolve(String(filePath || ''));
+    const text = fs.readFileSync(resolved, 'utf8');
+    fs.rmSync(resolved, { force: true });
+    return text;
+}
+
+function hydrateWorkerPayload(result) {
+    if (!result || typeof result !== 'object') return result;
+    const hydrated = { ...result };
+
+    for (const field of ['caption', 'summary']) {
+        const fileKey = `${field}_file`;
+        if (hydrated[fileKey] && !Object.prototype.hasOwnProperty.call(hydrated, field)) {
+            hydrated[field] = readAndDeleteWorkerPayload(hydrated[fileKey]);
+        }
+        delete hydrated[fileKey];
+    }
+
+    return hydrated;
 }
 
 function isFinalAnalysisResult(result) {
@@ -204,12 +228,12 @@ function parseWorkerLine(line, context) {
         if (!match) {
             const nextTag = remaining.search(/(?:RESULT|LOG)\t/);
             if (nextTag === -1) {
-                context.onLog('info', remaining);
+                addWorkerFallbackLog(context, remaining);
                 return;
             }
 
             const prefix = remaining.slice(0, nextTag).trim();
-            if (prefix) context.onLog('info', prefix);
+            if (prefix) addWorkerFallbackLog(context, prefix);
             remaining = remaining.slice(nextTag);
             continue;
         }
@@ -218,6 +242,18 @@ function parseWorkerLine(line, context) {
         handleWorkerRecord(match[1], parsed.payload, context);
         remaining = parsed.rest.trim();
     }
+}
+
+function addWorkerFallbackLog(context, text) {
+    const value = String(text || '').trim();
+    if (!value) return;
+
+    if (/"(?:caption|summary|caption_file|summary_file)"\s*:/.test(value)) {
+        context.onLog('warning', 'Worker emitted an incomplete analysis payload; raw caption/summary was hidden.');
+        return;
+    }
+
+    context.onLog('info', value.length > 500 ? `${value.slice(0, 500)}...` : value);
 }
 
 async function runAnalysisWorkerBatch(batch, { onLog }) {

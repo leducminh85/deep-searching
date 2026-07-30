@@ -43,11 +43,23 @@ function normalizeHandle(value) {
     return handle ? `@${handle}` : '';
 }
 
-async function youtubeGet(path, params = {}) {
+function isAbortError(err) {
+    return err?.name === 'AbortError' || err?.code === 'ABORT_ERR' || /aborted|stopped by admin/i.test(String(err?.message || ''));
+}
+
+function throwIfAborted(signal) {
+    if (!signal?.aborted) return;
+    const err = new Error('Stopped by admin');
+    err.name = 'AbortError';
+    throw err;
+}
+
+async function youtubeGet(path, params = {}, options = {}) {
     const apiKey = getApiKey();
     if (!apiKey) {
         throw new Error('YOUTUBE_API_KEY is not configured');
     }
+    throwIfAborted(options.signal);
 
     const url = new URL(`https://www.googleapis.com/youtube/v3/${path}`);
     url.searchParams.set('key', apiKey);
@@ -57,7 +69,7 @@ async function youtubeGet(path, params = {}) {
         }
     }
 
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: options.signal });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
         throw new Error(payload?.error?.message || `YouTube API failed (${response.status})`);
@@ -65,7 +77,7 @@ async function youtubeGet(path, params = {}) {
     return payload;
 }
 
-async function resolveChannel(rawUrl) {
+async function resolveChannel(rawUrl, options = {}) {
     const ref = extractChannelRef(rawUrl);
     let payload = null;
 
@@ -74,19 +86,19 @@ async function resolveChannel(rawUrl) {
             part: 'snippet,contentDetails',
             id: ref.channelId,
             maxResults: 1,
-        });
+        }, options);
     } else if (ref.handle) {
         payload = await youtubeGet('channels', {
             part: 'snippet,contentDetails',
             forHandle: ref.handle,
             maxResults: 1,
-        });
+        }, options);
     } else if (ref.username) {
         payload = await youtubeGet('channels', {
             part: 'snippet,contentDetails',
             forUsername: ref.username,
             maxResults: 1,
-        });
+        }, options);
     }
 
     if (!payload?.items?.length && ref.query) {
@@ -95,14 +107,14 @@ async function resolveChannel(rawUrl) {
             q: ref.query,
             type: 'channel',
             maxResults: 1,
-        });
+        }, options);
         const channelId = search.items?.[0]?.snippet?.channelId;
         if (channelId) {
             payload = await youtubeGet('channels', {
                 part: 'snippet,contentDetails',
                 id: channelId,
                 maxResults: 1,
-            });
+            }, options);
         }
     }
 
@@ -163,23 +175,25 @@ export function startMissingChannelMetadataSync(channels, limit = 12) {
     return started;
 }
 
-async function fetchPlaylistVideos(playlistId, channelName) {
+async function fetchPlaylistVideos(playlistId, channelName, options = {}) {
     const playlistItems = [];
     let pageToken = null;
 
     do {
+        throwIfAborted(options.signal);
         const payload = await youtubeGet('playlistItems', {
             part: 'snippet,contentDetails',
             playlistId,
             maxResults: 50,
             pageToken,
-        });
+        }, options);
         playlistItems.push(...(payload.items || []));
         pageToken = payload.nextPageToken || null;
     } while (pageToken);
 
     const videos = [];
     for (let index = 0; index < playlistItems.length; index += 50) {
+        throwIfAborted(options.signal);
         const batch = playlistItems.slice(index, index + 50);
         const ids = batch
             .map((item) => item.contentDetails?.videoId || item.snippet?.resourceId?.videoId)
@@ -191,7 +205,7 @@ async function fetchPlaylistVideos(playlistId, channelName) {
             part: 'snippet,statistics,contentDetails',
             id: ids.join(','),
             maxResults: 50,
-        });
+        }, options);
 
         for (const item of detail.items || []) {
             const videoId = item.id;
@@ -216,6 +230,7 @@ async function fetchPlaylistVideos(playlistId, channelName) {
 
 export async function syncChannelVideos(channelRow, rawUrl, options = {}) {
     const minDurationSeconds = Number(options.minDurationSeconds || 0);
+    const signal = options.signal;
 
     await markChannelSyncState(channelRow.id, {
         sync_status: 'running',
@@ -224,7 +239,8 @@ export async function syncChannelVideos(channelRow, rawUrl, options = {}) {
     });
 
     try {
-        const resolved = await resolveChannel(rawUrl || channelRow.channel_url);
+        throwIfAborted(signal);
+        const resolved = await resolveChannel(rawUrl || channelRow.channel_url, { signal });
         if (!resolved.uploadsPlaylistId) {
             throw new Error('Không tìm thấy uploads playlist của kênh');
         }
@@ -236,7 +252,8 @@ export async function syncChannelVideos(channelRow, rawUrl, options = {}) {
             channel_thumbnail: resolved.channelThumbnail,
         });
 
-        const fetchedVideos = await fetchPlaylistVideos(resolved.uploadsPlaylistId, resolved.channelName);
+        const fetchedVideos = await fetchPlaylistVideos(resolved.uploadsPlaylistId, resolved.channelName, { signal });
+        throwIfAborted(signal);
         const videos = minDurationSeconds > 0
             ? fetchedVideos.filter((video) => !video.durationSeconds || video.durationSeconds > minDurationSeconds)
             : fetchedVideos;
@@ -258,6 +275,14 @@ export async function syncChannelVideos(channelRow, rawUrl, options = {}) {
             ...result,
         };
     } catch (err) {
+        if (isAbortError(err) || signal?.aborted) {
+            await markChannelSyncState(channelRow.id, {
+                sync_status: 'idle',
+                analysis_status: 'pending',
+                last_error: 'Stopped by admin',
+            });
+            throw err;
+        }
         await markChannelSyncState(channelRow.id, {
             sync_status: 'failed',
             analysis_status: 'failed',
