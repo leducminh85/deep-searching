@@ -1100,26 +1100,34 @@ export async function queryVideos({
 }
 
 /**
- * Get unique channel names from the local videos table.
+ * Get unique visible channels from the local videos table, including metadata when available.
  */
 export async function getChannels() {
     await ensureUsageSchema();
     const db = getPool();
     try {
         const result = await db.query(
-            `SELECT DISTINCT v.channel_name
+            `SELECT
+                 btrim(v.channel_name) AS channel_name,
+                 MAX(NULLIF(cs.channel_thumbnail, '')) AS channel_thumbnail
              FROM videos v
+             LEFT JOIN channel_sources cs
+               ON lower(btrim(cs.channel_name)) = lower(btrim(v.channel_name))
              WHERE v.channel_name IS NOT NULL
-               AND v.channel_name != ''
+               AND btrim(v.channel_name) != ''
                AND NOT EXISTS (
                    SELECT 1
-                   FROM channel_sources cs
-                   WHERE cs.hidden IS TRUE
-                     AND lower(cs.channel_name) = lower(v.channel_name)
+                   FROM channel_sources hidden_cs
+                   WHERE hidden_cs.hidden IS TRUE
+                     AND lower(btrim(hidden_cs.channel_name)) = lower(btrim(v.channel_name))
                )
-             ORDER BY v.channel_name`
+             GROUP BY btrim(v.channel_name)
+             ORDER BY btrim(v.channel_name)`
         );
-        return result.rows.map(r => r.channel_name);
+        return result.rows.map(r => ({
+            name: r.channel_name,
+            thumbnail: r.channel_thumbnail || '',
+        }));
     } catch (e) {
         console.error(`❌ Local DB Error (channels): ${e.message}`);
         return [];

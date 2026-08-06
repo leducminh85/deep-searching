@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Youtube, ArrowUp, Search, Filter, X, Plus, Languages, AlertTriangle, MoreHorizontal, Flag, Sparkles, ChevronDown, Film, Check } from 'lucide-react';
+import { Youtube, ArrowUp, Search, Filter, X, Plus, Languages, AlertTriangle, MoreHorizontal, Flag, Sparkles, ChevronDown, ChevronLeft, ChevronRight, Film, Check, Circle, CalendarDays, Loader2 } from 'lucide-react';
 import SearchCat from './SearchCat';
 
 
@@ -364,6 +364,316 @@ const AiTopicSearchPanelCompact = ({
     );
 };
 
+const arraysEqualAsSets = (left = [], right = []) => {
+    if (left.length !== right.length) return false;
+    const rightSet = new Set(right);
+    return left.every(item => rightSet.has(item));
+};
+
+const getChannelInitials = (name) => {
+    const normalized = String(name || '')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/[^a-zA-Z0-9]+/g, ' ')
+        .trim();
+    if (!normalized) return '?';
+
+    const parts = normalized.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }
+    return parts[0].slice(0, 2).toUpperCase();
+};
+
+const ChannelFilterItem = ({ channel, thumbnail, selected, onToggle }) => (
+    <button
+        type="button"
+        className={`channel-filter-item ${selected ? 'selected' : ''}`}
+        onClick={() => onToggle(channel)}
+        aria-pressed={selected}
+        title={channel}
+    >
+        <span className="channel-filter-avatar" aria-hidden="true">
+            {thumbnail ? (
+                <>
+                    <img
+                        src={thumbnail}
+                        alt=""
+                        loading="lazy"
+                        onError={(event) => {
+                            event.currentTarget.style.display = 'none';
+                        }}
+                    />
+                    <span className="channel-filter-avatar-fallback">{getChannelInitials(channel)}</span>
+                </>
+            ) : getChannelInitials(channel)}
+        </span>
+        <span className="channel-filter-name">{channel}</span>
+        <span className="channel-filter-state" aria-hidden="true">
+            {selected ? <Check size={16} /> : <Circle size={17} />}
+        </span>
+    </button>
+);
+
+const DATE_WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+const DATE_MONTHS = [
+    'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
+    'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'
+];
+
+const toIsoDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const parseIsoDate = (value) => {
+    if (!value) return null;
+    const [year, month, day] = String(value).split('-').map(Number);
+    if (!year || !month || !day) return null;
+    const date = new Date(year, month - 1, day);
+    return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDisplayDate = (value) => {
+    const date = parseIsoDate(value);
+    if (!date) return '';
+    return new Intl.DateTimeFormat('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+    }).format(date);
+};
+
+const addDays = (date, amount) => {
+    const next = new Date(date);
+    next.setDate(next.getDate() + amount);
+    return next;
+};
+
+const addMonths = (date, amount) => {
+    const next = new Date(date);
+    next.setMonth(next.getMonth() + amount);
+    return next;
+};
+
+const isSameDay = (left, right) => (
+    left
+    && right
+    && left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate()
+);
+
+const buildCalendarDays = (monthDate) => {
+    const firstOfMonth = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+    const mondayOffset = (firstOfMonth.getDay() + 6) % 7;
+    const gridStart = addDays(firstOfMonth, -mondayOffset);
+
+    return Array.from({ length: 42 }, (_, index) => {
+        const date = addDays(gridStart, index);
+        return {
+            date,
+            iso: toIsoDate(date),
+            inMonth: date.getMonth() === monthDate.getMonth(),
+        };
+    });
+};
+
+const CustomDatePicker = ({ id, label, value, onChange, rangeStart, rangeEnd }) => {
+    const selectedDate = parseIsoDate(value);
+    const startDate = parseIsoDate(rangeStart);
+    const endDate = parseIsoDate(rangeEnd);
+    const today = useMemo(() => {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    }, []);
+    const [isOpen, setIsOpen] = useState(false);
+    const [openUp, setOpenUp] = useState(false);
+    const [popoverStyle, setPopoverStyle] = useState({});
+    const [viewMonth, setViewMonth] = useState(selectedDate || today);
+    const [focusedDate, setFocusedDate] = useState(selectedDate || today);
+    const pickerRef = useRef(null);
+    const calendarRef = useRef(null);
+
+    useEffect(() => {
+        if (selectedDate) {
+            setViewMonth(selectedDate);
+            setFocusedDate(selectedDate);
+        }
+    }, [value]);
+
+    const updatePopoverPosition = useCallback(() => {
+        const triggerRect = pickerRef.current?.querySelector('.custom-date-trigger')?.getBoundingClientRect();
+        if (!triggerRect) return;
+
+        const width = Math.min(304, window.innerWidth - 24);
+        const gap = 8;
+        const popoverHeight = 328;
+        const shouldOpenUp = window.innerHeight - triggerRect.bottom < popoverHeight + gap && triggerRect.top > popoverHeight + gap;
+        const left = Math.min(Math.max(12, triggerRect.left), window.innerWidth - width - 12);
+        const top = shouldOpenUp
+            ? Math.max(12, triggerRect.top - popoverHeight - gap)
+            : Math.min(triggerRect.bottom + gap, window.innerHeight - popoverHeight - 12);
+
+        setOpenUp(shouldOpenUp);
+        setPopoverStyle({ left, top, width });
+    }, []);
+
+    useEffect(() => {
+        if (!isOpen) return undefined;
+
+        updatePopoverPosition();
+
+        const handlePointerDown = (event) => {
+            if (!pickerRef.current?.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+
+        const handleReposition = () => updatePopoverPosition();
+
+        document.addEventListener('pointerdown', handlePointerDown);
+        window.addEventListener('resize', handleReposition);
+        window.addEventListener('scroll', handleReposition, true);
+        window.setTimeout(() => calendarRef.current?.focus(), 0);
+
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown);
+            window.removeEventListener('resize', handleReposition);
+            window.removeEventListener('scroll', handleReposition, true);
+        };
+    }, [isOpen, updatePopoverPosition]);
+
+    const calendarDays = useMemo(() => buildCalendarDays(viewMonth), [viewMonth]);
+    const rangeFrom = startDate && endDate && startDate <= endDate ? startDate : null;
+    const rangeTo = startDate && endDate && startDate <= endDate ? endDate : null;
+
+    const selectDate = (date) => {
+        onChange(toIsoDate(date));
+        setViewMonth(date);
+        setFocusedDate(date);
+        setIsOpen(false);
+    };
+
+    const moveFocus = (days) => {
+        setFocusedDate(prev => {
+            const next = addDays(prev || selectedDate || today, days);
+            setViewMonth(new Date(next.getFullYear(), next.getMonth(), 1));
+            return next;
+        });
+    };
+
+    const handleCalendarKeyDown = (event) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            setIsOpen(false);
+            return;
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectDate(focusedDate || selectedDate || today);
+            return;
+        }
+        if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            moveFocus(-1);
+        } else if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            moveFocus(1);
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            moveFocus(-7);
+        } else if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            moveFocus(7);
+        }
+    };
+
+    return (
+        <div className="custom-date-picker" ref={pickerRef}>
+            <span id={`${id}-label`} className="custom-date-label">{label}</span>
+            <button
+                type="button"
+                className={`custom-date-trigger ${isOpen ? 'open' : ''}`}
+                onClick={() => setIsOpen(open => !open)}
+                aria-haspopup="dialog"
+                aria-expanded={isOpen}
+                aria-labelledby={`${id}-label`}
+            >
+                <CalendarDays size={21} aria-hidden="true" />
+                <span className={value ? 'has-value' : ''}>{value ? formatDisplayDate(value) : 'Chọn ngày'}</span>
+            </button>
+
+            {isOpen && (
+                <div className={`custom-date-popover ${openUp ? 'open-up' : ''}`} style={popoverStyle}>
+                    <div className="custom-calendar-header">
+                        <button
+                            type="button"
+                            onClick={() => setViewMonth(prev => addMonths(prev, -1))}
+                            aria-label="Tháng trước"
+                        >
+                            <ChevronLeft size={18} />
+                        </button>
+                        <strong>{DATE_MONTHS[viewMonth.getMonth()]} / {viewMonth.getFullYear()}</strong>
+                        <button
+                            type="button"
+                            onClick={() => setViewMonth(prev => addMonths(prev, 1))}
+                            aria-label="Tháng sau"
+                        >
+                            <ChevronRight size={18} />
+                        </button>
+                    </div>
+
+                    <div
+                        className="custom-calendar-grid"
+                        ref={calendarRef}
+                        tabIndex={0}
+                        onKeyDown={handleCalendarKeyDown}
+                        role="grid"
+                        aria-label={`Lịch ${label}`}
+                    >
+                        {DATE_WEEKDAYS.map(day => (
+                            <div key={day} className="custom-calendar-weekday" role="columnheader">{day}</div>
+                        ))}
+                        {calendarDays.map(({ date, iso, inMonth }) => {
+                            const isSelected = isSameDay(date, selectedDate);
+                            const isToday = isSameDay(date, today);
+                            const isFocused = isSameDay(date, focusedDate);
+                            const isRangeStart = isSameDay(date, rangeFrom);
+                            const isRangeEnd = isSameDay(date, rangeTo);
+                            const inRange = rangeFrom && rangeTo && date > rangeFrom && date < rangeTo;
+
+                            return (
+                                <button
+                                    key={iso}
+                                    type="button"
+                                    role="gridcell"
+                                    aria-selected={isSelected}
+                                    className={[
+                                        'custom-calendar-day',
+                                        inMonth ? '' : 'outside',
+                                        isToday ? 'today' : '',
+                                        isSelected ? 'selected' : '',
+                                        inRange ? 'in-range' : '',
+                                        isRangeStart ? 'range-start' : '',
+                                        isRangeEnd ? 'range-end' : '',
+                                        isFocused ? 'focused' : '',
+                                    ].filter(Boolean).join(' ')}
+                                    onClick={() => selectDate(date)}
+                                    onMouseEnter={() => setFocusedDate(date)}
+                                >
+                                    {date.getDate()}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const DataTable = ({
     highlightEnabled,
     searchMode,
@@ -439,6 +749,9 @@ const DataTable = ({
     const [endDate, setEndDate] = useState('');
     const [availableChannels, setAvailableChannels] = useState([]);
     const [selectedChannels, setSelectedChannels] = useState([]); // List of channels to INCLUDE
+    const [channelMetaByName, setChannelMetaByName] = useState({});
+    const [channelFilterQuery, setChannelFilterQuery] = useState('');
+    const [isApplyingFilters, setIsApplyingFilters] = useState(false);
 
     const API_BASE = '';
 
@@ -614,8 +927,26 @@ const DataTable = ({
             const res = await fetch(`${API_BASE}/api/channels`);
             if (res.ok) {
                 const data = await res.json();
-                setAvailableChannels(data);
-                setSelectedChannels(data);
+                const normalizedChannels = Array.isArray(data)
+                    ? data
+                        .map(item => {
+                            if (typeof item === 'string') return { name: item, thumbnail: '' };
+                            return {
+                                name: item?.name || item?.channel_name || '',
+                                thumbnail: item?.thumbnail || item?.channel_thumbnail || '',
+                            };
+                        })
+                        .filter(item => item.name)
+                    : [];
+                const channelNames = normalizedChannels.map(item => item.name);
+                const metaByName = normalizedChannels.reduce((acc, item) => {
+                    acc[item.name] = item;
+                    return acc;
+                }, {});
+
+                setAvailableChannels(channelNames);
+                setSelectedChannels(channelNames);
+                setChannelMetaByName(metaByName);
                 // No setAppliedFilters here to avoid redundant fetch on mount
             }
         } catch (err) {
@@ -694,8 +1025,9 @@ const DataTable = ({
             if (filters.maxViews) filterParams += `&max_views=${filters.maxViews}`;
             if (filters.startDate) filterParams += `&start_date=${filters.startDate}`;
             if (filters.endDate) filterParams += `&end_date=${filters.endDate}`;
-            if (filters.selectedChannels && filters.selectedChannels.length > 0 && filters.selectedChannels.length < availableChannels.length) {
-                filterParams += `&channels=${encodeURIComponent(filters.selectedChannels.join(','))}`;
+            if (Array.isArray(filters.selectedChannels) && filters.selectedChannels.length < availableChannels.length) {
+                const channelParam = filters.selectedChannels.length > 0 ? filters.selectedChannels.join(',') : '__NO_CHANNELS_SELECTED__';
+                filterParams += `&channels=${encodeURIComponent(channelParam)}`;
             }
             if (profileId) {
                 filterParams += `&profile_id=${encodeURIComponent(profileId)}&hide_used=${hideUsed ? '1' : '0'}`;
@@ -1135,29 +1467,64 @@ const DataTable = ({
         );
     };
 
+    const filteredChannels = useMemo(() => {
+        const query = channelFilterQuery.trim().toLowerCase();
+        if (!query) return availableChannels;
+        return availableChannels.filter(channel => String(channel).toLowerCase().includes(query));
+    }, [availableChannels, channelFilterQuery]);
+
+    const allVisibleChannelsSelected = filteredChannels.length > 0 && filteredChannels.every(channel => selectedChannels.includes(channel));
+    const noVisibleChannelsSelected = filteredChannels.every(channel => !selectedChannels.includes(channel));
+
     const handleSelectAllChannels = () => {
-        setSelectedChannels([...availableChannels]);
+        setSelectedChannels(prev => Array.from(new Set([...prev, ...filteredChannels])));
     };
 
     const handleDeselectAllChannels = () => {
-        setSelectedChannels([]);
+        const visibleSet = new Set(filteredChannels);
+        setSelectedChannels(prev => prev.filter(channel => !visibleSet.has(channel)));
     };
 
-    const clearFilters = () => {
+    const resetAdvancedFilters = () => {
         setMinViews('');
         setMaxViews('');
         setStartDate('');
         setEndDate('');
         setSelectedChannels(availableChannels);
-        setAppliedTags([]);
-        setSearchTags([]);
-        setAppliedAdvancedSearch(null);
-        setAdvancedSearchMeta(null);
-        setActiveSearchTab('keyword');
-        setAiTopicError('');
+        setChannelFilterQuery('');
         setPage(1);
         setAppliedFilters({});
     };
+
+    const normalizedAppliedSelectedChannels = useMemo(() => {
+        return Array.isArray(appliedFilters.selectedChannels) ? appliedFilters.selectedChannels : availableChannels;
+    }, [appliedFilters.selectedChannels, availableChannels]);
+
+    const filterDraftChanged = useMemo(() => (
+        String(minViews || '') !== String(appliedFilters.minViews || '')
+        || String(maxViews || '') !== String(appliedFilters.maxViews || '')
+        || String(startDate || '') !== String(appliedFilters.startDate || '')
+        || String(endDate || '') !== String(appliedFilters.endDate || '')
+        || !arraysEqualAsSets(selectedChannels, normalizedAppliedSelectedChannels)
+    ), [minViews, maxViews, startDate, endDate, selectedChannels, normalizedAppliedSelectedChannels, appliedFilters]);
+
+    const hasDefaultFilterDraft = useMemo(() => (
+        !minViews
+        && !maxViews
+        && !startDate
+        && !endDate
+        && arraysEqualAsSets(selectedChannels, availableChannels)
+    ), [minViews, maxViews, startDate, endDate, selectedChannels, availableChannels]);
+
+    const activeFilterCount = useMemo(() => {
+        let count = 0;
+        if (minViews) count += 1;
+        if (maxViews) count += 1;
+        if (startDate) count += 1;
+        if (endDate) count += 1;
+        if (selectedChannels.length < availableChannels.length) count += 1;
+        return count;
+    }, [minViews, maxViews, startDate, endDate, selectedChannels.length, availableChannels.length]);
 
     const sortedData = useMemo(() => {
         return data; // Dữ liệu đã được Backend sắp xếp
@@ -1184,7 +1551,8 @@ const DataTable = ({
     };
 
     const applyAdvancedFilters = () => {
-        setIsFilterOpen(false);
+        if (!filterDraftChanged || isApplyingFilters) return;
+        setIsApplyingFilters(true);
         const filters = {
             minViews,
             maxViews,
@@ -1194,6 +1562,10 @@ const DataTable = ({
         };
         setPage(1);
         setAppliedFilters(filters);
+        window.setTimeout(() => {
+            setIsApplyingFilters(false);
+            setIsFilterOpen(false);
+        }, 120);
     };
 
     const setDatePreset = (days) => {
@@ -1560,110 +1932,161 @@ const DataTable = ({
                 onClick={toggleFilter}
             />
 
-            <div className={`filter-sidebar ${isFilterOpen ? 'open' : ''}`}>
+            <div
+                className={`filter-sidebar ${isFilterOpen ? 'open' : ''}`}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="advanced-filter-title"
+            >
                 <div className="sidebar-header">
-                    <h2>Bộ lọc nâng cao</h2>
-                    <button onClick={toggleFilter} className="close-btn">
-                        <X size={24} />
+                        <h2 id="advanced-filter-title">Bộ lọc nâng cao</h2>
+                    <button type="button" onClick={toggleFilter} className="close-btn" aria-label="Đóng bộ lọc">
+                        <X size={20} />
                     </button>
                 </div>
 
                 <div className="sidebar-content">
                     <div className="filter-group">
-                        <label>Khoảng Lượt xem</label>
+                        <h3>Khoảng lượt xem</h3>
                         <div className="side-by-side">
-                            <input
-                                type="number"
-                                placeholder="Tối thiểu"
-                                value={minViews}
-                                onChange={(e) => setMinViews(e.target.value)}
-                            />
-                            <input
-                                type="number"
-                                placeholder="Tối đa"
-                                value={maxViews}
-                                onChange={(e) => setMaxViews(e.target.value)}
-                            />
+                            <label className="filter-field">
+                                <span>Tối thiểu</span>
+                                <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    placeholder="VD: 10000"
+                                    value={minViews}
+                                    onChange={(e) => setMinViews(e.target.value)}
+                                />
+                            </label>
+                            <label className="filter-field">
+                                <span>Tối đa</span>
+                                <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    placeholder="VD: 500000"
+                                    value={maxViews}
+                                    onChange={(e) => setMaxViews(e.target.value)}
+                                />
+                            </label>
                         </div>
                     </div>
 
                     <div className="filter-group">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                            <label style={{ margin: 0 }}>Khoảng Ngày đăng</label>
-                            <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <div className="filter-section-heading">
+                            <h3>Khoảng ngày đăng</h3>
+                            <div className="filter-preset-row">
                                 <button
+                                    type="button"
                                     onClick={() => setDatePreset(7)}
-                                    style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
                                 >
                                     7 ngày
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={() => setDatePreset(30)}
-                                    style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
                                 >
                                     30 ngày
                                 </button>
                             </div>
                         </div>
                         <div className="date-inputs">
-                            <div>
-                                <span>Từ ngày:</span>
-                                <input
-                                    type="date"
-                                    value={startDate}
-                                    onChange={(e) => setStartDate(e.target.value)}
-                                />
-                            </div>
-                            <div>
-                                <span>Đến ngày:</span>
-                                <input
-                                    type="date"
-                                    value={endDate}
-                                    onChange={(e) => setEndDate(e.target.value)}
-                                />
-                            </div>
+                            <CustomDatePicker
+                                id="filter-start-date"
+                                label="Từ ngày"
+                                value={startDate}
+                                onChange={setStartDate}
+                                rangeStart={startDate}
+                                rangeEnd={endDate}
+                            />
+                            <CustomDatePicker
+                                id="filter-end-date"
+                                label="Đến ngày"
+                                value={endDate}
+                                onChange={setEndDate}
+                                rangeStart={startDate}
+                                rangeEnd={endDate}
+                            />
                         </div>
                     </div>
 
-                    <div className="filter-group">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                            <label style={{ margin: 0 }}>Chọn Kênh hiển thị</label>
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div className="filter-group channel-filter-group">
+                        <div className="filter-section-heading channel-heading">
+                            <h3>Chọn kênh hiển thị</h3>
+                            <span className="channel-selected-count">
+                                Đã chọn {selectedChannels.length}/{availableChannels.length} kênh
+                            </span>
+                        </div>
+
+                        <div className="channel-toolbar">
+                            <label className="channel-search-field">
+                                <Search size={17} aria-hidden="true" />
+                                <input
+                                    type="search"
+                                    placeholder="Tìm kiếm kênh..."
+                                    value={channelFilterQuery}
+                                    onChange={(event) => setChannelFilterQuery(event.target.value)}
+                                />
+                            </label>
+                            <div className="channel-bulk-actions">
                                 <button
+                                    type="button"
                                     onClick={handleSelectAllChannels}
-                                    style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                                    disabled={filteredChannels.length === 0 || allVisibleChannelsSelected}
                                 >
-                                    Tất cả
+                                    Chọn tất cả
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={handleDeselectAllChannels}
-                                    style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-color)', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                                    disabled={filteredChannels.length === 0 || noVisibleChannelsSelected}
                                 >
-                                    Bỏ hết
+                                    Bỏ chọn tất cả
                                 </button>
                             </div>
                         </div>
+
                         <div className="channel-list">
-                            {availableChannels.map(channel => (
-                                <label key={channel} className="channel-item">
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedChannels.includes(channel)}
-                                        onChange={() => handleChannelToggle(channel)}
+                            {filteredChannels.length > 0 ? (
+                                filteredChannels.map(channel => (
+                                    <ChannelFilterItem
+                                        key={channel}
+                                        channel={channel}
+                                        thumbnail={channelMetaByName[channel]?.thumbnail}
+                                        selected={selectedChannels.includes(channel)}
+                                        onToggle={handleChannelToggle}
                                     />
-                                    <span>{channel}</span>
-                                </label>
-                            ))}
+                                ))
+                            ) : (
+                                <div className="channel-empty-state">Không tìm thấy kênh phù hợp</div>
+                            )}
                         </div>
                     </div>
                 </div>
 
                 <div className="sidebar-footer">
-                    <button onClick={applyAdvancedFilters} className="apply-btn">
-                        Áp dụng bộ lọc
+                    <button
+                        type="button"
+                        onClick={resetAdvancedFilters}
+                        className="reset-btn"
+                        disabled={hasDefaultFilterDraft || isApplyingFilters}
+                    >
+                        Đặt lại bộ lọc
                     </button>
-                    <button onClick={clearFilters} className="reset-btn">
-                        Đặt lại mặc định
+                    <button
+                        type="button"
+                        onClick={applyAdvancedFilters}
+                        className="apply-btn"
+                        disabled={!filterDraftChanged || isApplyingFilters}
+                    >
+                        {isApplyingFilters ? (
+                            <>
+                                <Loader2 size={17} className="spin-icon" />
+                                <span>Đang áp dụng...</span>
+                            </>
+                        ) : (
+                            activeFilterCount > 0 ? `Áp dụng ${activeFilterCount} bộ lọc` : 'Áp dụng bộ lọc'
+                        )}
                     </button>
                 </div>
             </div>
