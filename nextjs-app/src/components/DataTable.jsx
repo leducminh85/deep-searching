@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Youtube, ArrowUp, Search, Filter, X, Plus, Languages, AlertTriangle, MoreHorizontal, Flag, Sparkles } from 'lucide-react';
+import { Youtube, ArrowUp, Search, Filter, X, Plus, Languages, AlertTriangle, MoreHorizontal, Flag, Sparkles, ChevronDown, Film, Check } from 'lucide-react';
 import SearchCat from './SearchCat';
 
 
@@ -413,6 +413,7 @@ const DataTable = ({
     const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
     const suggestionsDebounceRef = useRef(null);
     const suggestionsAbortRef = useRef(null);
+    const searchModeMenuRef = useRef(null);
     const searchWrapperRef = useRef(null);
     const searchInputRef = useRef(null);
     const seenSuggestionsRef = useRef(new Set());
@@ -421,6 +422,7 @@ const DataTable = ({
     const tableScrollRef = useRef(null);
     const [visibleRows, setVisibleRows] = useState(50);
     const [showScrollTop, setShowScrollTop] = useState(false);
+    const [isSearchModeOpen, setIsSearchModeOpen] = useState(false);
 
     // Pagination state
     const [page, setPage] = useState(1);
@@ -1066,6 +1068,9 @@ const DataTable = ({
             if (searchWrapperRef.current && !searchWrapperRef.current.contains(e.target)) {
                 setShowSuggestions(false);
             }
+            if (searchModeMenuRef.current && !searchModeMenuRef.current.contains(e.target)) {
+                setIsSearchModeOpen(false);
+            }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -1102,6 +1107,13 @@ const DataTable = ({
         } else if (e.key === 'Backspace' && !inputValue && searchTags.length > 0) {
             removeTag(searchTags[searchTags.length - 1]);
         }
+    };
+
+    const handleSearchModeSelect = (nextMode) => {
+        if (nextMode !== searchMode) {
+            onToggleSearchMode();
+        }
+        setIsSearchModeOpen(false);
     };
 
     const sortData = (key) => {
@@ -1707,13 +1719,41 @@ const DataTable = ({
                     </div>
                 )}
                 <div className="toolbar search-toolbar" style={{ gap: '1rem', flexWrap: 'wrap' }}>
-                    <button
-                        className={`search-mode-inline-button mode-${searchMode} tour-search-mode`}
-                        onClick={onToggleSearchMode}
-                        title={searchMode === 'or' ? 'Chế độ tìm kiếm: Một trong các từ khóa (OR)' : 'Chế độ tìm kiếm: Tất cả từ khóa (AND)'}
-                    >
-                        {searchMode.toUpperCase()}
-                    </button>
+                    <div className="search-mode-menu-wrap tour-search-mode" ref={searchModeMenuRef}>
+                        <button
+                            type="button"
+                            className={`search-mode-trigger mode-${searchMode} ${isSearchModeOpen ? 'open' : ''}`}
+                            onClick={() => setIsSearchModeOpen((open) => !open)}
+                            title={searchMode === 'or' ? 'Kết quả chỉ cần chứa ít nhất một từ khóa' : 'Kết quả phải chứa tất cả từ khóa'}
+                            aria-label="Chọn điều kiện tìm kiếm từ khóa"
+                            aria-haspopup="menu"
+                            aria-expanded={isSearchModeOpen}
+                        >
+                            <span>{searchMode.toUpperCase()}</span>
+                            <ChevronDown className="search-mode-chevron" size={16} aria-hidden="true" />
+                        </button>
+
+                        {isSearchModeOpen && (
+                            <div className="search-mode-menu" role="menu">
+                                {[
+                                    ['and', 'AND', 'Kết quả phải chứa tất cả từ khóa'],
+                                    ['or', 'OR', 'Kết quả chỉ cần chứa ít nhất một từ khóa'],
+                                ].map(([value, label, title]) => (
+                                    <button
+                                        key={value}
+                                        type="button"
+                                        role="menuitem"
+                                        className={`search-mode-option ${searchMode === value ? 'active' : ''}`}
+                                        onClick={() => handleSearchModeSelect(value)}
+                                        title={title}
+                                    >
+                                        <span>{label}</span>
+                                        {searchMode === value && <Check size={14} className="search-mode-check" />}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
 
                     <div className="search-wrapper" ref={searchWrapperRef} style={{
                         flex: 1,
@@ -1725,7 +1765,7 @@ const DataTable = ({
                         background: 'var(--glass-bg)',
                         border: '1px solid var(--glass-border)',
                         borderRadius: '12px',
-                        minHeight: '48px',
+                        minHeight: 'var(--search-control-height)',
                         flexWrap: 'wrap'
                     }}>
 
@@ -1864,13 +1904,10 @@ const DataTable = ({
 
                     {profileControl}
 
-                    <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 500 }}>
-                        {appliedAdvancedSearch
-                            ? `AI tìm thấy ${formatCount(totalResults)} kết quả`
-                            : appliedTags.length > 0
-                            ? `Tìm thấy ${formatCount(totalResults)} kết quả`
-                            : `Tổng cộng ${formatCount(totalResults)} video`
-                        }
+                    <span className="video-count-badge" role="status" aria-label={`${formatCount(totalResults)} videos`}>
+                        <Film size={16} aria-hidden="true" />
+                        <strong>{formatCount(totalResults)}</strong>
+                        <span>videos</span>
                     </span>
                 </div>
 

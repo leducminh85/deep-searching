@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Circle, Edit3, ExternalLink, Eye, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, Circle, Edit3, ExternalLink, Eye, Plus, RefreshCw, Trash2, User, X } from 'lucide-react';
 
 export default function ProfileManager({ initialProfile = null, onActiveProfileChange, onUsageChanged }) {
     const [profiles, setProfiles] = useState(initialProfile ? [initialProfile] : []);
@@ -417,22 +417,26 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
         <>
             <div className="profile-menu-wrap" ref={menuRef}>
                 <button
-                    className={`profile-chip tour-profile ${isAnySyncing ? 'syncing' : ''}`}
+                    className={`profile-chip tour-profile ${isAnySyncing ? 'syncing' : ''} ${isMenuOpen ? 'open' : ''}`}
                     onClick={() => setIsMenuOpen((prev) => !prev)}
                     title="Chọn Usage Profile"
+                    aria-haspopup="menu"
+                    aria-expanded={isMenuOpen}
+                    aria-label={`Chọn profile, hiện tại: ${activeProfile?.name || 'Không dùng profile'}`}
                 >
-                    <span className="profile-chip-label">Profile:</span>
+                    <User size={17} className="profile-chip-icon" aria-hidden="true" />
                     <span className="profile-chip-name">{activeProfile?.name || 'Không'}</span>
-                    {isAnySyncing ? <RefreshCw size={15} className="spin-icon" /> : <ChevronDown size={15} />}
+                    {isAnySyncing ? <RefreshCw size={15} className="spin-icon" /> : <ChevronDown size={15} className="profile-chip-chevron" />}
                 </button>
 
                 {isMenuOpen && (
-                    <div className="profile-dropdown">
+                    <div className="profile-dropdown" role="menu">
                         <button
                             className={`profile-dropdown-item profile-dropdown-none ${!activeProfile ? 'active' : ''}`}
                             onClick={clearActiveProfile}
                             title="Không dùng profile"
                             aria-label="Không dùng profile"
+                            role="menuitem"
                         >
                             <Circle size={15} className="profile-none-icon" />
                         </button>
@@ -442,9 +446,10 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
                                 key={profile.id}
                                 className={`profile-dropdown-item ${activeProfile?.id === profile.id ? 'active' : ''}`}
                                 onClick={() => selectProfile(profile)}
+                                role="menuitem"
                             >
-                                {activeProfile?.id === profile.id && <Check size={14} />}
                                 <span>{profile.name}</span>
+                                {activeProfile?.id === profile.id && <Check size={14} className="profile-check" />}
                             </button>
                         ))}
 
@@ -456,6 +461,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
                                 setIsMenuOpen(false);
                                 setIsOpen(true);
                             }}
+                            role="menuitem"
                         >
                             <Edit3 size={14} />
                             <span>Quản lý profile</span>

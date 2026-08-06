@@ -1,18 +1,24 @@
 import React from 'react';
+import { cookies } from 'next/headers';
 import { createClient } from '../utils/supabase/server';
 import { getActiveProfile } from '../lib/usageProfiles';
 import { getDataInternal } from './api/data/route';
 import HomePageClient from './HomePageClient';
 
+const SEARCH_MODE_COOKIE = 'searchMode';
+const VALID_SEARCH_MODES = new Set(['and', 'or']);
+
 export default async function HomePage() {
   const supabase = await createClient();
+  const cookieStore = await cookies();
   const { data: { user } } = await supabase.auth.getUser();
 
   const page = 1;
   const pageSize = 50;
   const sortBy = 'date_published';
   const sortOrder = 'desc';
-  const mode = 'or';
+  const cookieSearchMode = cookieStore.get(SEARCH_MODE_COOKIE)?.value;
+  const mode = VALID_SEARCH_MODES.has(cookieSearchMode) ? cookieSearchMode : 'and';
   const query = null;
   const minViews = null;
   const maxViews = null;
@@ -56,5 +62,5 @@ export default async function HomePage() {
     }
   }
 
-  return <HomePageClient initialData={initialData} initialProfile={initialProfile} />;
+  return <HomePageClient initialData={initialData} initialProfile={initialProfile} initialSearchMode={mode} />;
 }

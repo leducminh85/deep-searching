@@ -8,11 +8,23 @@ import DataTable from '../components/DataTable';
 import ProfileManager from '../components/ProfileManager';
 
 const Joyride = dynamic(() => import('react-joyride'), { ssr: false });
+const VALID_SEARCH_MODES = new Set(['and', 'or']);
+const SEARCH_MODE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
-export default function HomePageClient({ initialData, initialProfile = null }) {
+function getCookieValue(name) {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function setClientCookie(name, value) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${SEARCH_MODE_COOKIE_MAX_AGE}; SameSite=Lax`;
+}
+
+export default function HomePageClient({ initialData, initialProfile = null, initialSearchMode = 'and' }) {
   const [theme, setTheme] = useState('dark');
   const [highlightEnabled, setHighlightEnabled] = useState(true);
-  const [searchMode, setSearchMode] = useState('or');
+  const [searchMode, setSearchMode] = useState(VALID_SEARCH_MODES.has(initialSearchMode) ? initialSearchMode : 'and');
   const [translateEnabled, setTranslateEnabled] = useState(false);
   const [captionSearchEnabled, setCaptionSearchEnabled] = useState(false);
   const [captionRefreshKey, setCaptionRefreshKey] = useState(0);
@@ -73,6 +85,7 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
     const savedTheme = localStorage.getItem('theme') || 'dark';
     const savedHighlight = localStorage.getItem('highlightEnabled');
     const savedSearchMode = localStorage.getItem('searchMode');
+    const cookieSearchMode = getCookieValue('searchMode');
     const savedTranslate = localStorage.getItem('translateEnabled');
     const savedCaptionSearch = localStorage.getItem('captionSearchEnabled');
 
@@ -80,7 +93,10 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
     document.documentElement.setAttribute('data-theme', savedTheme);
 
     if (savedHighlight !== null) setHighlightEnabled(savedHighlight === 'true');
-    if (savedSearchMode) setSearchMode(savedSearchMode);
+    if (!VALID_SEARCH_MODES.has(cookieSearchMode) && VALID_SEARCH_MODES.has(savedSearchMode)) {
+      setSearchMode(savedSearchMode);
+      setClientCookie('searchMode', savedSearchMode);
+    }
     if (savedTranslate !== null) setTranslateEnabled(savedTranslate === 'true');
     if (savedCaptionSearch !== null) setCaptionSearchEnabled(savedCaptionSearch === 'true');
 
@@ -101,6 +117,7 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
 
   useEffect(() => {
     localStorage.setItem('searchMode', searchMode);
+    setClientCookie('searchMode', searchMode);
   }, [searchMode]);
 
   useEffect(() => {
