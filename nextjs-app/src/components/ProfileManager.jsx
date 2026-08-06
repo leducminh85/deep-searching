@@ -145,7 +145,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
             if (cancelled || autoSyncStartedRef.current || !payload?.profiles?.length) return;
 
             autoSyncStartedRef.current = true;
-            await syncAllProfiles();
+            await syncAllProfiles({ notifyUsageChanged: false });
         };
 
         loadAndSync();
@@ -297,7 +297,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
         }
     };
 
-    const syncAllProfiles = async () => {
+    const syncAllProfiles = async ({ notifyUsageChanged = true } = {}) => {
         setSyncingId('all');
         setError('');
         startSyncProgress('Đang tự động đồng bộ các profile', 'all');
@@ -308,7 +308,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
             if (!response.ok) throw new Error(payload.error || 'Lỗi đồng bộ profile');
 
             await fetchProfiles({ showLoading: false });
-            if (Number(payload.synced_count || 0) > 0) onUsageChanged?.();
+            if (notifyUsageChanged && Number(payload.synced_count || 0) > 0) onUsageChanged?.();
             finishSyncProgress(formatSyncAllSummary(payload), Number(payload.failed_count || 0) > 0 ? 'warning' : 'success');
             return payload;
         } catch (err) {
