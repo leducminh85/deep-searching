@@ -15,6 +15,7 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
   const [searchMode, setSearchMode] = useState('or');
   const [translateEnabled, setTranslateEnabled] = useState(false);
   const [captionSearchEnabled, setCaptionSearchEnabled] = useState(false);
+  const [captionRefreshKey, setCaptionRefreshKey] = useState(0);
   const [activeProfile, setActiveProfile] = useState(initialProfile);
   const [usageRefreshKey, setUsageRefreshKey] = useState(0);
   const [runTour, setRunTour] = useState(false);
@@ -118,6 +119,11 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
     setSearchMode(prev => (prev === 'or' ? 'and' : 'or'));
   };
 
+  const toggleCaptionSearch = () => {
+    setCaptionSearchEnabled(prev => !prev);
+    setCaptionRefreshKey(prev => prev + 1);
+  };
+
   const startTour = () => {
     setRunTour(false);
     window.setTimeout(() => setRunTour(true), 0);
@@ -217,7 +223,7 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
           </button>
           <button
             className="theme-toggle tour-caption"
-            onClick={() => setCaptionSearchEnabled(!captionSearchEnabled)}
+            onClick={toggleCaptionSearch}
             title={captionSearchEnabled ? "Tắt tìm trong Phụ đề" : "Bật tìm trong Phụ đề"}
             style={{
               color: captionSearchEnabled ? '#f59e0b' : 'inherit',
@@ -255,6 +261,7 @@ export default function HomePageClient({ initialData, initialProfile = null }) {
             />
           )}
           usageRefreshKey={usageRefreshKey}
+          captionRefreshKey={captionRefreshKey}
           initialData={initialData}
         />
       </main>

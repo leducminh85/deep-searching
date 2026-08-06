@@ -374,6 +374,7 @@ const DataTable = ({
     activeProfile,
     profileControl,
     usageRefreshKey,
+    captionRefreshKey,
     initialData
 }) => {
 
@@ -383,8 +384,8 @@ const DataTable = ({
     const [error, setError] = useState(initialData?.error || null);
 
     const isFirstRun = useRef(true);
-    const usageFilterKey = `${activeProfile?.id || ''}:${hideUsedEnabled ? 'hide' : 'show'}:${usageRefreshKey || 0}`;
-    const lastUsageFilterKeyRef = useRef(usageFilterKey);
+    const lastUsageRefreshKeyRef = useRef(usageRefreshKey || 0);
+    const lastCaptionRefreshKeyRef = useRef(captionRefreshKey || 0);
 
     const [searchTags, setSearchTags] = useState([]);
     const [appliedTags, setAppliedTags] = useState([]);
@@ -530,17 +531,23 @@ const DataTable = ({
     // Gọi fetch khi trang, từ khóa hoặc sắp xếp thay đổi
     useEffect(() => {
         const query = appliedAdvancedSearch?.displayQuery || appliedTags.join(',');
-        const usageFilterChanged = lastUsageFilterKeyRef.current !== usageFilterKey;
-        if (usageFilterChanged) {
-            lastUsageFilterKeyRef.current = usageFilterKey;
-            if (page !== 1) {
-                setPage(1);
-                return;
-            }
+        const usageRefreshChanged = lastUsageRefreshKeyRef.current !== (usageRefreshKey || 0);
+        const captionRefreshChanged = lastCaptionRefreshKeyRef.current !== (captionRefreshKey || 0);
+
+        if (usageRefreshChanged) {
+            lastUsageRefreshKeyRef.current = usageRefreshKey || 0;
+        }
+        if (captionRefreshChanged) {
+            lastCaptionRefreshKeyRef.current = captionRefreshKey || 0;
+        }
+
+        if ((usageRefreshChanged || captionRefreshChanged) && page !== 1) {
+            setPage(1);
+            return;
         }
 
         // Skip client fetch on first render if initialData is provided and we are on default view
-        if (isFirstRun.current && initialData?.data?.length > 0 && !usageFilterChanged) {
+        if (isFirstRun.current && initialData?.data?.length > 0 && !usageRefreshChanged && !captionRefreshChanged) {
             isFirstRun.current = false;
             if (page === 1 && !query && Object.keys(appliedFilters).length === 0) {
                 // Đã có từ SRR cho bản mặc định
@@ -561,7 +568,7 @@ const DataTable = ({
             Boolean(hideUsedEnabled && activeProfile?.id),
             appliedAdvancedSearch?.plan || null
         );
-    }, [appliedTags, appliedAdvancedSearch, page, sortConfig, appliedFilters, captionSearchEnabled, usageFilterKey]);
+    }, [appliedTags, appliedAdvancedSearch, page, sortConfig, appliedFilters, usageRefreshKey, captionRefreshKey]);
 
     // Lấy danh sách kênh khi component mount
     useEffect(() => {
@@ -1699,37 +1706,16 @@ const DataTable = ({
                         )}
                     </div>
                 )}
-                <div className="search-tab-strip" role="tablist" aria-label="Chế độ tìm kiếm">
-                    <button
-                        type="button"
-                        role="tab"
-                        aria-selected={activeSearchTab === 'keyword'}
-                        className={`search-tab-button ${activeSearchTab === 'keyword' ? 'active' : ''}`}
-                        onClick={() => handleSearchTabChange('keyword')}
-                    >
-                        Từ khóa
-                    </button>
-                    <button
-                        type="button"
-                        role="tab"
-                        aria-selected={activeSearchTab === 'ai'}
-                        className={`search-tab-button ${activeSearchTab === 'ai' ? 'active' : ''}`}
-                        onClick={() => handleSearchTabChange('ai')}
-                    >
-                        AI
-                    </button>
-                </div>
-
                 <div className="toolbar search-toolbar" style={{ gap: '1rem', flexWrap: 'wrap' }}>
                     <button
-                        className={`search-mode-inline-button mode-${searchMode} tour-search-mode ${activeSearchTab !== 'keyword' ? 'is-hidden' : ''}`}
+                        className={`search-mode-inline-button mode-${searchMode} tour-search-mode`}
                         onClick={onToggleSearchMode}
                         title={searchMode === 'or' ? 'Chế độ tìm kiếm: Một trong các từ khóa (OR)' : 'Chế độ tìm kiếm: Tất cả từ khóa (AND)'}
                     >
                         {searchMode.toUpperCase()}
                     </button>
 
-                    <div className={`search-wrapper ${activeSearchTab !== 'keyword' ? 'is-hidden' : ''}`} ref={searchWrapperRef} style={{
+                    <div className="search-wrapper" ref={searchWrapperRef} style={{
                         flex: 1,
                         position: 'relative',
                         display: 'flex',
@@ -1867,24 +1853,6 @@ const DataTable = ({
                             </button>
                         </div>
                     </div>
-
-                    {activeSearchTab === 'ai' && (
-                        <AiTopicSearchPanelCompact
-                            topic={aiTopicInput}
-                            onTopicChange={setAiTopicInput}
-                            onGenerate={handleGenerateTopicSearch}
-                            loading={aiTopicLoading}
-                            slow={aiTopicSlow}
-                            error={aiTopicError}
-                            onRetry={handleGenerateTopicSearch}
-                            editablePlan={aiEditablePlan}
-                            termInputs={aiTermInputs}
-                            onTermInputChange={handleAiTermInputChange}
-                            onAddTerm={handleAddAiTerm}
-                            onRemoveTerm={handleRemoveAiTerm}
-                            onRunSearch={handleRunAiSearch}
-                        />
-                    )}
 
                     <button
                         onClick={toggleFilter}

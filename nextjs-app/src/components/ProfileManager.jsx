@@ -116,7 +116,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
         return `Auto sync xong ${payload.synced_count || 0} profile, bo qua ${skippedProfiles} profile, doc moi/sua: ${refreshed}, bo qua doc: ${skipped}.`;
     };
 
-    const fetchProfiles = async ({ showLoading = true } = {}) => {
+    const fetchProfiles = async ({ showLoading = true, notifyParent = false } = {}) => {
         if (showLoading) setLoading(true);
         setError('');
         try {
@@ -127,7 +127,10 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
             }
             const payload = await response.json();
             setProfiles(payload.profiles || []);
-            notifyActiveProfile(payload.activeProfile || null);
+            setActiveProfile(payload.activeProfile || null);
+            if (notifyParent) {
+                onActiveProfileChange?.(payload.activeProfile || null);
+            }
             return payload;
         } catch (err) {
             setError(err.message);
@@ -201,7 +204,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
 
             const createdProfile = !isEditing ? payload.profile : null;
             resetForm();
-            await fetchProfiles();
+            await fetchProfiles({ notifyParent: true });
 
             if (createdProfile) {
                 setSaving(false);
@@ -267,7 +270,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
 
             if (editingId === profile.id) resetForm();
             setProfileToDelete(null);
-            await fetchProfiles();
+            await fetchProfiles({ notifyParent: true });
         } catch (err) {
             setError(err.message);
         } finally {
@@ -284,7 +287,7 @@ export default function ProfileManager({ initialProfile = null, onActiveProfileC
             const payload = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(payload.error || 'Không thể sync profile');
 
-            await fetchProfiles();
+            await fetchProfiles({ notifyParent: true });
             if (activeProfile?.id === profile.id) onUsageChanged?.();
             finishSyncProgress(formatSyncSummary(payload), payload.warning_count > 0 ? 'warning' : 'success');
             return payload;
