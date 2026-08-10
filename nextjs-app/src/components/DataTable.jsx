@@ -269,12 +269,18 @@ const AiTopicSearchPanelCompact = ({
     return (
         <div className="ai-search-panel">
             <div className="ai-topic-input-row">
-                <textarea
-                    className="ai-topic-textarea"
+                <input
+                    type="text"
+                    className="ai-topic-input"
                     value={topic}
                     onChange={(event) => onTopicChange(event.target.value)}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter' && topic.trim() && !loading) {
+                            event.preventDefault();
+                            onGenerate();
+                        }
+                    }}
                     placeholder="Nhập chủ đề. Ví dụ: Karen gets arrested in airport"
-                    rows={3}
                     aria-label="Chủ đề tìm kiếm AI"
                 />
                 <div className="ai-topic-actions">
@@ -344,7 +350,7 @@ const AiTopicSearchPanelCompact = ({
                                             type="text"
                                             value={termInputs[groupIndex] || ''}
                                             onChange={(event) => onTermInputChange(groupIndex, event.target.value)}
-                                            placeholder="Thêm từ"
+                                            placeholder="+ Thêm"
                                         />
                                     </form>
                                 </span>
@@ -1442,6 +1448,13 @@ const DataTable = ({
     };
 
     const handleSearchModeSelect = (nextMode) => {
+        if (nextMode === 'ai') {
+            handleSearchTabChange('ai');
+            setIsSearchModeOpen(false);
+            return;
+        }
+
+        handleSearchTabChange('keyword');
         if (nextMode !== searchMode) {
             onToggleSearchMode();
         }
@@ -2141,18 +2154,18 @@ const DataTable = ({
                         )}
                     </div>
                 )}
-                <div className="toolbar search-toolbar" style={{ gap: '1rem', flexWrap: 'wrap' }}>
+                <div className="toolbar search-toolbar" style={{ gap: '0.625rem', flexWrap: 'wrap' }}>
                     <div className="search-mode-menu-wrap tour-search-mode" ref={searchModeMenuRef}>
                         <button
                             type="button"
-                            className={`search-mode-trigger mode-${searchMode} ${isSearchModeOpen ? 'open' : ''}`}
+                            className={`search-mode-trigger mode-${activeSearchTab === 'ai' ? 'ai' : searchMode} ${isSearchModeOpen ? 'open' : ''}`}
                             onClick={() => setIsSearchModeOpen((open) => !open)}
-                            title={searchMode === 'or' ? 'Kết quả chỉ cần chứa ít nhất một từ khóa' : 'Kết quả phải chứa tất cả từ khóa'}
+                            title={activeSearchTab === 'ai' ? 'Tìm kiếm bằng AI' : (searchMode === 'or' ? 'Kết quả chỉ cần chứa ít nhất một từ khóa' : 'Kết quả phải chứa tất cả từ khóa')}
                             aria-label="Chọn điều kiện tìm kiếm từ khóa"
                             aria-haspopup="menu"
                             aria-expanded={isSearchModeOpen}
                         >
-                            <span>{searchMode.toUpperCase()}</span>
+                            <span>{activeSearchTab === 'ai' ? 'AI' : searchMode.toUpperCase()}</span>
                             <ChevronDown className="search-mode-chevron" size={16} aria-hidden="true" />
                         </button>
 
@@ -2161,34 +2174,37 @@ const DataTable = ({
                                 {[
                                     ['and', 'AND', 'Kết quả phải chứa tất cả từ khóa'],
                                     ['or', 'OR', 'Kết quả chỉ cần chứa ít nhất một từ khóa'],
+                                    ['ai', 'AI', 'Tìm kiếm bằng AI'],
                                 ].map(([value, label, title]) => (
                                     <button
                                         key={value}
                                         type="button"
                                         role="menuitem"
-                                        className={`search-mode-option ${searchMode === value ? 'active' : ''}`}
+                                        className={`search-mode-option ${value === 'ai' ? (activeSearchTab === 'ai' ? 'active' : '') : (activeSearchTab === 'keyword' && searchMode === value ? 'active' : '')}`}
                                         onClick={() => handleSearchModeSelect(value)}
                                         title={title}
                                     >
                                         <span>{label}</span>
-                                        {searchMode === value && <Check size={14} className="search-mode-check" />}
+                                        {((value === 'ai' && activeSearchTab === 'ai') || (value !== 'ai' && activeSearchTab === 'keyword' && searchMode === value)) && <Check size={14} className="search-mode-check" />}
                                     </button>
                                 ))}
                             </div>
                         )}
                     </div>
 
+                    {activeSearchTab === 'keyword' ? (
                     <div className="search-wrapper" ref={searchWrapperRef} style={{
                         flex: 1,
                         position: 'relative',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '0.5rem',
-                        padding: '4px 12px',
+                        padding: '0 4px 0 12px',
                         background: 'var(--glass-bg)',
                         border: '1px solid var(--glass-border)',
-                        borderRadius: '12px',
+                        borderRadius: '10px',
                         minHeight: 'var(--search-control-height)',
+                        minWidth: '280px',
                         flexWrap: 'wrap'
                     }}>
 
@@ -2303,19 +2319,39 @@ const DataTable = ({
                                     background: 'var(--primary-color)',
                                     border: 'none',
                                     borderRadius: '8px',
-                                    width: '36px',
-                                    height: '36px',
+                                    minWidth: '108px',
+                                    height: 'calc(var(--search-control-height) - 8px)',
+                                    padding: '0 0.9rem',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
+                                    gap: '0.4rem',
                                     cursor: 'pointer',
                                     color: 'white'
                                 }}
                             >
                                 <Search size={18} />
+                                <span style={{ fontWeight: 850, fontSize: '0.84rem' }}>Tìm kiếm</span>
                             </button>
                         </div>
                     </div>
+                    ) : (
+                        <AiTopicSearchPanelCompact
+                            topic={aiTopicInput}
+                            onTopicChange={setAiTopicInput}
+                            onGenerate={handleGenerateTopicSearch}
+                            loading={aiTopicLoading}
+                            slow={aiTopicSlow}
+                            error={aiTopicError}
+                            onRetry={handleGenerateTopicSearch}
+                            editablePlan={aiEditablePlan}
+                            termInputs={aiTermInputs}
+                            onTermInputChange={handleAiTermInputChange}
+                            onAddTerm={handleAddAiTerm}
+                            onRemoveTerm={handleRemoveAiTerm}
+                            onRunSearch={handleRunAiSearch}
+                        />
+                    )}
 
                     <button
                         onClick={toggleFilter}
