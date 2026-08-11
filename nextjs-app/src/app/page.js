@@ -62,5 +62,12 @@ export default async function HomePage() {
     }
   }
 
-  return <HomePageClient initialData={initialData} initialProfile={initialProfile} initialSearchMode={mode} />;
+  return (
+    <HomePageClient
+      initialData={initialData}
+      initialProfile={initialProfile}
+      initialSearchMode={mode}
+      currentUserKey={user?.id || user?.email || 'anonymous'}
+    />
+  );
 }

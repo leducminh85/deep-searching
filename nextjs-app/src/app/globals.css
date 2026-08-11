@@ -1739,6 +1739,166 @@ th {
   animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.tutorial-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10020;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1rem, 3vw, 2rem);
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.tutorial-modal {
+  width: min(920px, calc(100vw - 2rem));
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-color) 94%, #020617 18%);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.58);
+  overflow: hidden;
+  animation: slideDown 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tutorial-modal-header {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  padding: 0 0.8rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.tutorial-modal-header h2 {
+  grid-column: 2;
+  margin: 0;
+  color: var(--text-color);
+  font-size: clamp(1.35rem, 2.2vw, 1.9rem);
+  font-weight: 950;
+  text-align: center;
+  background: linear-gradient(135deg, #f8fafc 10%, #c7d2fe 48%, #fde68a 92%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 14px 36px rgba(99, 102, 241, 0.28);
+}
+
+.tutorial-modal-close {
+  grid-column: 3;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.38);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+.tutorial-modal-close:hover,
+.tutorial-modal-close:focus-visible {
+  outline: none;
+  border-color: rgba(244, 63, 94, 0.45);
+  background: rgba(244, 63, 94, 0.12);
+  color: white;
+}
+
+.tutorial-video-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #020617;
+}
+
+.tutorial-video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: #020617;
+  cursor: pointer;
+}
+
+.tutorial-play-button {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 76px;
+  height: 76px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.92), rgba(99, 102, 241, 0.92));
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 0.25rem;
+  cursor: pointer;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.42);
+  transition: transform 0.18s ease, filter 0.18s ease;
+}
+
+.tutorial-play-button:hover,
+.tutorial-play-button:focus-visible {
+  outline: none;
+  transform: translate(-50%, -50%) scale(1.04);
+  filter: brightness(1.08);
+}
+
+.tutorial-fullscreen-button {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.68);
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.tutorial-fullscreen-button:hover,
+.tutorial-fullscreen-button:focus-visible {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.58);
+  background: rgba(99, 102, 241, 0.34);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 640px) {
+  .tutorial-modal {
+    width: min(100%, calc(100vw - 1rem));
+    border-radius: 10px;
+  }
+
+  .tutorial-modal-header {
+    min-height: 52px;
+  }
+
+  .tutorial-modal-header h2 {
+    font-size: 1.18rem;
+  }
+
+  .tutorial-play-button {
+    width: 62px;
+    height: 62px;
+  }
+}
+
 .modal-container.admin-modal {
   max-width: 520px;
   border-radius: 8px;

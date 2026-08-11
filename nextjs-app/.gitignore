@@ -33,6 +33,9 @@ yarn-error.log*
 # runtime admin data / cookies
 /data/
 
+# local tutorial media
+/public/toturial.mp4
+
 # env files (can opt-in for committing if needed)
 .env*
 
