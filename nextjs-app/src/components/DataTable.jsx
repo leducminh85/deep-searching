@@ -2180,7 +2180,7 @@ const DataTable = ({
                                         key={value}
                                         type="button"
                                         role="menuitem"
-                                        className={`search-mode-option ${value === 'ai' ? (activeSearchTab === 'ai' ? 'active' : '') : (activeSearchTab === 'keyword' && searchMode === value ? 'active' : '')}`}
+                                        className={`search-mode-option mode-${value} ${value === 'ai' ? (activeSearchTab === 'ai' ? 'active' : '') : (activeSearchTab === 'keyword' && searchMode === value ? 'active' : '')}`}
                                         onClick={() => handleSearchModeSelect(value)}
                                         title={title}
                                     >

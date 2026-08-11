@@ -2239,14 +2239,37 @@ th {
   background: color-mix(in srgb, var(--search-control-accent) 16%, transparent);
 }
 
+.search-mode-option.mode-ai {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(99, 102, 241, 0.2));
+  color: #fde68a;
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.2);
+}
+
+.search-mode-option.mode-ai.active {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.92), rgba(99, 102, 241, 0.92));
+  color: white;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 10px 22px rgba(99, 102, 241, 0.22);
+}
+
 .search-mode-option:hover {
   background: color-mix(in srgb, var(--search-control-accent) 24%, transparent);
+  color: white;
+}
+
+.search-mode-option.mode-ai:hover {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.72), rgba(99, 102, 241, 0.78));
   color: white;
 }
 
 .search-mode-check {
   margin-left: auto;
   color: #86efac;
+}
+
+.search-mode-option.mode-ai.active .search-mode-check {
+  color: white;
 }
 
 .video-count-badge {
