@@ -1,6 +1,29 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 
+function isInvalidRefreshTokenError(error) {
+  return error?.code === 'refresh_token_not_found'
+    || error?.code === 'invalid_refresh_token'
+    || /invalid refresh token|refresh token not found/i.test(String(error?.message || ''))
+}
+
+function clearSupabaseCookies(request, response) {
+  request.cookies.getAll().forEach(({ name }) => {
+    if (name.startsWith('sb-')) {
+      response.cookies.delete(name)
+    }
+  })
+  return response
+}
+
+function isPublicAuthPath(pathname) {
+  return pathname.startsWith('/login')
+    || pathname.startsWith('/admin')
+    || pathname.startsWith('/auth')
+    || pathname.startsWith('/api/auth')
+    || pathname.startsWith('/api/admin')
+}
+
 export async function updateSession(request) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -31,9 +54,28 @@ export async function updateSession(request) {
   // supabase.auth.getUser(). A simple mistake can make it very hard to debug
   // issues with users being randomly logged out.
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user = null
+  try {
+    const result = await supabase.auth.getUser()
+    user = result.data.user
+  } catch (error) {
+    if (!isInvalidRefreshTokenError(error)) throw error
+
+    if (isPublicAuthPath(request.nextUrl.pathname)) {
+      return clearSupabaseCookies(request, supabaseResponse)
+    }
+
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      return clearSupabaseCookies(
+        request,
+        NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      )
+    }
+
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return clearSupabaseCookies(request, NextResponse.redirect(url))
+  }
 
   if (
     !user &&

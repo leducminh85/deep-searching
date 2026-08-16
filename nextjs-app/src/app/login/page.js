@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [globeUnavailable, setGlobeUnavailable] = useState(false);
   const router = useRouter();
   const canvasRef = useRef(null);
   
@@ -28,6 +29,7 @@ export default function LoginPage() {
         
         // Setup responsive size
         const container = canvasRef.current.parentElement;
+        if (!container) return;
         let containerWidth = container.clientWidth;
         
         if (containerWidth === 0) {
@@ -42,40 +44,46 @@ export default function LoginPage() {
         canvasRef.current.style.width = `${size}px`;
         canvasRef.current.style.height = `${size}px`;
 
-        if (globe) globe.destroy();
+        try {
+          if (globe) globe.destroy();
 
-        globe = createGlobe(canvasRef.current, {
-          devicePixelRatio: 2,
-          width: size * 2, // Multiply by 2 for retina crispness
-          height: size * 2,
-          phi: 4.8,
-          theta: 0.25,
-          dark: 1, // Dark mode
-          diffuse: 1.2, // Light diffusion
-          mapSamples: 24000, // Dot density
-          mapBrightness: 8,
-          baseColor: [0.08, 0.08, 0.25], // Deep space blue/purple
-          markerColor: [0.957, 0.247, 0.365], // Rose/Pink markers
-          glowColor: [0.15, 0.15, 0.35], // Outer glow
-          markers: [
-            { location: [21.0285, 105.8542], size: 0.08 }, // Hanoi
-            { location: [10.7626, 106.6602], size: 0.08 }, // HCM
-            { location: [35.6895, 139.6917], size: 0.05 }, // Tokyo
-            { location: [37.7749, -122.4194], size: 0.05 }, // SF
-            { location: [51.5074, -0.1278], size: 0.04 }   // London
-          ],
-          onRender: (state) => {
-            // Auto-rotate if not being dragged
-            if (pointerInteracting.current === null) {
-                phi += 0.003;
+          globe = createGlobe(canvasRef.current, {
+            devicePixelRatio: 2,
+            width: size * 2, // Multiply by 2 for retina crispness
+            height: size * 2,
+            phi: 4.8,
+            theta: 0.25,
+            dark: 1, // Dark mode
+            diffuse: 1.2, // Light diffusion
+            mapSamples: 24000, // Dot density
+            mapBrightness: 8,
+            baseColor: [0.08, 0.08, 0.25], // Deep space blue/purple
+            markerColor: [0.957, 0.247, 0.365], // Rose/Pink markers
+            glowColor: [0.15, 0.15, 0.35], // Outer glow
+            markers: [
+              { location: [21.0285, 105.8542], size: 0.08 }, // Hanoi
+              { location: [10.7626, 106.6602], size: 0.08 }, // HCM
+              { location: [35.6895, 139.6917], size: 0.05 }, // Tokyo
+              { location: [37.7749, -122.4194], size: 0.05 }, // SF
+              { location: [51.5074, -0.1278], size: 0.04 }   // London
+            ],
+            onRender: (state) => {
+              // Auto-rotate if not being dragged
+              if (pointerInteracting.current === null) {
+                  phi += 0.003;
+              }
+              state.phi = phi + pointerInteractionMovement.current;
+
+              // Critical for perfectly round globe without ellipsis distortion
+              state.width = size * 2;
+              state.height = size * 2;
             }
-            state.phi = phi + pointerInteractionMovement.current;
-            
-            // Critical for perfectly round globe without ellipsis distortion
-            state.width = size * 2;
-            state.height = size * 2;
-          }
-        });
+          });
+          setGlobeUnavailable(false);
+        } catch (err) {
+          console.error('Globe background failed to initialize:', err);
+          setGlobeUnavailable(true);
+        }
     }
 
     initGlobe();
@@ -136,6 +144,7 @@ export default function LoginPage() {
             <canvas 
               ref={canvasRef} 
               className="cobe-canvas"
+              aria-hidden={globeUnavailable}
               onPointerDown={(e) => {
                 pointerInteracting.current = e.clientX - pointerInteractionMovement.current;
                 e.target.style.cursor = 'grabbing';

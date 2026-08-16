@@ -17,6 +17,7 @@ const canHighlightMatch = (text, start, end) => {
 
 const DISPLAY_DATE_OFFSET_MINUTES = 7 * 60;
 const NUMBER_FORMAT_LOCALE = 'vi-VN';
+const AI_SEARCH_ENABLED = false;
 
 const formatCount = (value) => Number(value || 0).toLocaleString(NUMBER_FORMAT_LOCALE);
 
@@ -785,6 +786,14 @@ const DataTable = ({
     const [copyrightLink, setCopyrightLink] = useState(null);
 
     useEffect(() => {
+        if (!AI_SEARCH_ENABLED && activeSearchTab === 'ai') {
+            setActiveSearchTab('keyword');
+            setAppliedAdvancedSearch(null);
+            setAdvancedSearchMeta(null);
+        }
+    }, [activeSearchTab]);
+
+    useEffect(() => {
         return () => {
             if (channelActionCloseTimerRef.current) {
                 clearTimeout(channelActionCloseTimerRef.current);
@@ -1119,6 +1128,8 @@ const DataTable = ({
     };
 
     const applyAiSearchPlan = (plan, options = {}) => {
+        if (!AI_SEARCH_ENABLED) return false;
+
         const normalizedPlan = clonePlan(plan);
         if (!normalizedPlan) return false;
 
@@ -1144,6 +1155,8 @@ const DataTable = ({
     };
 
     const handleGenerateTopicSearch = async () => {
+        if (!AI_SEARCH_ENABLED) return;
+
         const topic = aiTopicInput.trim();
         if (!topic) {
             setAiTopicError('Nhập chủ đề trước khi tạo bộ từ khóa AI.');
@@ -1191,7 +1204,7 @@ const DataTable = ({
     };
 
     const handleSearchTabChange = (tab) => {
-        setActiveSearchTab(tab);
+        setActiveSearchTab(AI_SEARCH_ENABLED || tab !== 'ai' ? tab : 'keyword');
         setAiTopicError('');
         setShowSuggestions(false);
         setSuggestions([]);
@@ -1449,7 +1462,9 @@ const DataTable = ({
 
     const handleSearchModeSelect = (nextMode) => {
         if (nextMode === 'ai') {
-            handleSearchTabChange('ai');
+            if (AI_SEARCH_ENABLED) {
+                handleSearchTabChange('ai');
+            }
             setIsSearchModeOpen(false);
             return;
         }
@@ -2158,14 +2173,14 @@ const DataTable = ({
                     <div className="search-mode-menu-wrap tour-search-mode" ref={searchModeMenuRef}>
                         <button
                             type="button"
-                            className={`search-mode-trigger mode-${activeSearchTab === 'ai' ? 'ai' : searchMode} ${isSearchModeOpen ? 'open' : ''}`}
+                            className={`search-mode-trigger mode-${searchMode} ${isSearchModeOpen ? 'open' : ''}`}
                             onClick={() => setIsSearchModeOpen((open) => !open)}
-                            title={activeSearchTab === 'ai' ? 'Tìm kiếm bằng AI' : (searchMode === 'or' ? 'Kết quả chỉ cần chứa ít nhất một từ khóa' : 'Kết quả phải chứa tất cả từ khóa')}
+                            title={searchMode === 'or' ? 'Kết quả chỉ cần chứa ít nhất một từ khóa' : 'Kết quả phải chứa tất cả từ khóa'}
                             aria-label="Chọn điều kiện tìm kiếm từ khóa"
                             aria-haspopup="menu"
                             aria-expanded={isSearchModeOpen}
                         >
-                            <span>{activeSearchTab === 'ai' ? 'AI' : searchMode.toUpperCase()}</span>
+                            <span>{searchMode.toUpperCase()}</span>
                             <ChevronDown className="search-mode-chevron" size={16} aria-hidden="true" />
                         </button>
 
@@ -2174,25 +2189,24 @@ const DataTable = ({
                                 {[
                                     ['and', 'AND', 'Kết quả phải chứa tất cả từ khóa'],
                                     ['or', 'OR', 'Kết quả chỉ cần chứa ít nhất một từ khóa'],
-                                    ['ai', 'AI', 'Tìm kiếm bằng AI'],
                                 ].map(([value, label, title]) => (
                                     <button
                                         key={value}
                                         type="button"
                                         role="menuitem"
-                                        className={`search-mode-option mode-${value} ${value === 'ai' ? (activeSearchTab === 'ai' ? 'active' : '') : (activeSearchTab === 'keyword' && searchMode === value ? 'active' : '')}`}
+                                        className={`search-mode-option mode-${value} ${activeSearchTab === 'keyword' && searchMode === value ? 'active' : ''}`}
                                         onClick={() => handleSearchModeSelect(value)}
                                         title={title}
                                     >
                                         <span>{label}</span>
-                                        {((value === 'ai' && activeSearchTab === 'ai') || (value !== 'ai' && activeSearchTab === 'keyword' && searchMode === value)) && <Check size={14} className="search-mode-check" />}
+                                        {activeSearchTab === 'keyword' && searchMode === value && <Check size={14} className="search-mode-check" />}
                                     </button>
                                 ))}
                             </div>
                         )}
                     </div>
 
-                    {activeSearchTab === 'keyword' ? (
+                    {!AI_SEARCH_ENABLED || activeSearchTab === 'keyword' ? (
                     <div className="search-wrapper" ref={searchWrapperRef} style={{
                         flex: 1,
                         position: 'relative',
