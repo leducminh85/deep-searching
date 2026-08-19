@@ -1,10 +1,21 @@
 import { insertOrUpdateVideos, markChannelSyncState } from './adminDb';
 
+const DEFAULT_MIN_VIDEO_DURATION_SECONDS = 180;
 const runningJobs = new Map();
 const runningMetadataJobs = new Map();
 
 function getApiKey() {
     return process.env.YOUTUBE_API_KEY;
+}
+
+function resolveMinDurationSeconds(value) {
+    if (value !== undefined) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    }
+
+    const envValue = Number(process.env.MIN_SYNC_VIDEO_DURATION_SECONDS);
+    return Number.isFinite(envValue) && envValue > 0 ? envValue : DEFAULT_MIN_VIDEO_DURATION_SECONDS;
 }
 
 function parseDurationSeconds(duration = '') {
@@ -229,7 +240,7 @@ async function fetchPlaylistVideos(playlistId, channelName, options = {}) {
 }
 
 export async function syncChannelVideos(channelRow, rawUrl, options = {}) {
-    const minDurationSeconds = Number(options.minDurationSeconds || 0);
+    const minDurationSeconds = resolveMinDurationSeconds(options.minDurationSeconds);
     const signal = options.signal;
 
     await markChannelSyncState(channelRow.id, {
@@ -294,7 +305,7 @@ export async function syncChannelVideos(channelRow, rawUrl, options = {}) {
 
 async function runChannelSync(channelRow, rawUrl, options = {}) {
     try {
-        const result = await syncChannelVideos(channelRow, rawUrl);
+        const result = await syncChannelVideos(channelRow, rawUrl, options);
         if (typeof options.afterSync === 'function') {
             await options.afterSync({ channelRow, result });
         }
