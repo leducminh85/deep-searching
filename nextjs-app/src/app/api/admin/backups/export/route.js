@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createAdminBackup } from '../../../../../lib/adminBackups';
+import { createAdminBackupNdjsonStream } from '../../../../../lib/adminBackups';
 import { requireAdmin } from '../../../../../lib/adminAuth';
 
 export async function GET() {
@@ -7,16 +7,18 @@ export async function GET() {
     if (unauthorized) return unauthorized;
 
     try {
-        const backup = await createAdminBackup();
-        const filename = `deep-video-search-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        const stream = createAdminBackupNdjsonStream();
+        const filename = `deep-video-search-backup-${new Date().toISOString().slice(0, 10)}.jsonl`;
 
-        return new NextResponse(JSON.stringify(backup, null, 2), {
+        return new Response(stream, {
             headers: {
-                'Content-Type': 'application/json; charset=utf-8',
+                'Cache-Control': 'no-store',
+                'Content-Type': 'application/x-ndjson; charset=utf-8',
                 'Content-Disposition': `attachment; filename="${filename}"`,
             },
         });
     } catch (err) {
-        return NextResponse.json({ error: err.message || 'Không thể tạo file backup' }, { status: 500 });
+        console.error('Admin backup export failed:', err);
+        return NextResponse.json({ error: err.message || 'Cannot create backup file' }, { status: 500 });
     }
 }

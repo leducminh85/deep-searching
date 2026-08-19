@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
 function readEnvFileValue(name) {
@@ -35,7 +36,7 @@ function getEnvValue(...names) {
     return '';
 }
 
-function getSupabaseAdminClient() {
+export function getSupabaseAdminClient() {
     const url = getEnvValue('NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_URL');
     const key = getEnvValue(
         'SUPABASE_SERVICE_ROLE_KEY',
@@ -70,6 +71,29 @@ function publicUser(user) {
     };
 }
 
+function backupUser(user) {
+    return {
+        id: user.id,
+        email: user.email,
+        phone: user.phone,
+        aud: user.aud,
+        role: user.role,
+        app_metadata: user.app_metadata || {},
+        user_metadata: user.user_metadata || {},
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+        last_sign_in_at: user.last_sign_in_at,
+        confirmed_at: user.confirmed_at,
+        email_confirmed_at: user.email_confirmed_at,
+        phone_confirmed_at: user.phone_confirmed_at,
+        banned_until: user.banned_until,
+        invited_at: user.invited_at,
+        providers: Array.isArray(user.identities)
+            ? user.identities.map((identity) => identity.provider).filter(Boolean)
+            : [],
+    };
+}
+
 export async function listUserAccounts({ page = 1, perPage = 1000 } = {}) {
     const supabase = getSupabaseAdminClient();
     const { data, error } = await supabase.auth.admin.listUsers({
@@ -83,6 +107,82 @@ export async function listUserAccounts({ page = 1, perPage = 1000 } = {}) {
     return {
         users: users.map(publicUser),
         total: data?.total || users.length,
+    };
+}
+
+export async function exportUserAccounts() {
+    const supabase = getSupabaseAdminClient();
+    const users = [];
+    const perPage = 1000;
+    let page = 1;
+    let total = null;
+
+    while (true) {
+        const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+        if (error) throw new Error(error.message || 'Khong the export danh sach user Supabase Auth.');
+
+        const batch = data?.users || [];
+        users.push(...batch.map(backupUser));
+        total = Number(data?.total || users.length);
+
+        if (!batch.length || users.length >= total || batch.length < perPage) break;
+        page += 1;
+    }
+
+    return users;
+}
+
+function createRestorePassword() {
+    return `${crypto.randomBytes(18).toString('base64url')}Aa1!`;
+}
+
+export async function importUserAccounts(users = []) {
+    if (!Array.isArray(users) || !users.length) {
+        return { imported: 0, created: 0, updated: 0, skipped: 0 };
+    }
+
+    const supabase = getSupabaseAdminClient();
+    const existing = await exportUserAccounts();
+    const existingByEmail = new Map(existing.map((user) => [String(user.email || '').toLowerCase(), user]));
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+
+    for (const user of users) {
+        const email = String(user?.email || '').trim().toLowerCase();
+        if (!email || !email.includes('@')) {
+            skipped += 1;
+            continue;
+        }
+
+        const attributes = {
+            email,
+            user_metadata: user.user_metadata || {},
+            app_metadata: user.app_metadata || {},
+        };
+
+        const existingUser = existingByEmail.get(email);
+        if (existingUser?.id) {
+            const { error } = await supabase.auth.admin.updateUserById(existingUser.id, attributes);
+            if (error) throw new Error(error.message || `Khong the cap nhat user ${email}.`);
+            updated += 1;
+            continue;
+        }
+
+        const { error } = await supabase.auth.admin.createUser({
+            ...attributes,
+            password: createRestorePassword(),
+            email_confirm: Boolean(user.email_confirmed_at || user.confirmed_at),
+        });
+        if (error) throw new Error(error.message || `Khong the tao user ${email}.`);
+        created += 1;
+    }
+
+    return {
+        imported: created + updated,
+        created,
+        updated,
+        skipped,
     };
 }
 

@@ -4,6 +4,15 @@ import React, { useRef, useState } from 'react';
 import { AlertTriangle, DatabaseBackup, Download, FileJson, Loader2, UploadCloud } from 'lucide-react';
 import { Toast } from '../../../components/admin/AdminFeedback';
 
+function RestoreMetric({ label, value }) {
+    return (
+        <div>
+            <span>{label}</span>
+            <strong>{Number(value || 0).toLocaleString('vi-VN')}</strong>
+        </div>
+    );
+}
+
 export default function AdminBackupsPage() {
     const fileInputRef = useRef(null);
     const [exporting, setExporting] = useState(false);
@@ -20,28 +29,17 @@ export default function AdminBackupsPage() {
     const handleExport = async () => {
         setExporting(true);
         try {
-            const response = await fetch('/api/admin/backups/export');
-            if (!response.ok) {
-                const payload = await response.json().catch(() => ({}));
-                throw new Error(payload.error || 'Không thể tạo file backup');
-            }
-
-            const blob = await response.blob();
-            const disposition = response.headers.get('content-disposition') || '';
-            const filename = disposition.match(/filename="([^"]+)"/)?.[1] || `deep-video-search-backup-${Date.now()}.json`;
-            const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
+            link.href = `/api/admin/backups/export?t=${Date.now()}`;
+            link.download = '';
             document.body.appendChild(link);
             link.click();
             link.remove();
-            URL.revokeObjectURL(url);
-            showToast('Đã tạo file backup');
+            showToast('Đang tải file backup');
         } catch (err) {
             showToast(err.message, 'danger');
         } finally {
-            setExporting(false);
+            window.setTimeout(() => setExporting(false), 1200);
         }
     };
 
@@ -78,7 +76,7 @@ export default function AdminBackupsPage() {
             <section className="admin-page-hero">
                 <div>
                     <p className="admin-eyebrow">Sao lưu</p>
-                    <h2>Sao lưu & phục hồi dữ liệu</h2>
+                    <h2>Sao lưu & phục hồi toàn bộ dữ liệu</h2>
                 </div>
             </section>
 
@@ -86,16 +84,16 @@ export default function AdminBackupsPage() {
                 <article className="admin-panel">
                     <div className="admin-panel-header">
                         <div>
-                            <h3>Tạo bản sao lưu</h3>
-                            <p>Export bảng channel_sources và videos thành một file JSON.</p>
+                            <h3>Tạo bản sao lưu đầy đủ</h3>
+                            <p>Export user, channel list, channel queue, video list và usage profile thành một file JSONL.</p>
                         </div>
                         <DatabaseBackup size={22} />
                     </div>
                     <div className="admin-backup-body">
                         <FileJson size={38} />
                         <div>
-                            <strong>Database / Video list</strong>
-                            <span>File chứa metadata backup, danh sách kênh và danh sách video hiện có.</span>
+                            <strong>Full database backup</strong>
+                            <span>File gồm Supabase Auth users, admin accounts, channel list, video data, profile và used-video cache.</span>
                         </div>
                     </div>
                     <button className="admin-primary-btn" type="button" onClick={handleExport} disabled={exporting}>
@@ -108,7 +106,7 @@ export default function AdminBackupsPage() {
                     <div className="admin-panel-header">
                         <div>
                             <h3>Phục hồi dữ liệu</h3>
-                            <p>Upload file JSON backup đã export từ hệ thống.</p>
+                            <p>Upload file JSONL backup đã export từ hệ thống. File JSON cũ vẫn được hỗ trợ.</p>
                         </div>
                         <UploadCloud size={22} />
                     </div>
@@ -116,18 +114,18 @@ export default function AdminBackupsPage() {
                     <form className="admin-form-grid" onSubmit={handleImport}>
                         <label className="admin-upload-zone">
                             <UploadCloud size={26} />
-                            <span>{selectedFile ? selectedFile.name : 'Chọn file backup JSON'}</span>
+                            <span>{selectedFile ? selectedFile.name : 'Chọn file backup JSONL'}</span>
                             <input
                                 ref={fileInputRef}
                                 type="file"
-                                accept="application/json,.json"
+                                accept="application/json,application/x-ndjson,.json,.jsonl,.ndjson"
                                 onChange={(event) => setSelectedFile(event.target.files?.[0] || null)}
                             />
                         </label>
 
                         <div className="admin-alert warning">
                             <AlertTriangle size={17} />
-                            Restore sẽ upsert dữ liệu: record trùng khóa được cập nhật, record mới được thêm. Hệ thống không tự xóa dữ liệu đang có.
+                            Restore sẽ upsert dữ liệu: record trùng khóa được cập nhật, record mới được thêm. Hệ thống không tự xóa dữ liệu đang có. Password Supabase Auth không thể khôi phục từ backup; user restored cần reset password.
                         </div>
 
                         <button className="admin-primary-btn" type="submit" disabled={importing || !selectedFile}>
@@ -138,8 +136,23 @@ export default function AdminBackupsPage() {
 
                     {lastImport && (
                         <div className="admin-detail-list restore-result">
-                            <div><span>Channel đã xử lý</span><strong>{Number(lastImport.imported_channel_sources || 0).toLocaleString('vi-VN')}</strong></div>
-                            <div><span>Video đã xử lý</span><strong>{Number(lastImport.imported_videos || 0).toLocaleString('vi-VN')}</strong></div>
+                            <RestoreMetric label="Users đã xử lý" value={lastImport.imported_users} />
+                            <RestoreMetric label="Users mới" value={lastImport.created_users} />
+                            <RestoreMetric label="Users cập nhật" value={lastImport.updated_users} />
+                            <RestoreMetric label="Admin accounts" value={lastImport.imported_admin_accounts} />
+                            <RestoreMetric label="Channels" value={lastImport.imported_channel_sources} />
+                            <RestoreMetric label="Channel queue" value={lastImport.imported_channel_source_queue} />
+                            <RestoreMetric label="Videos" value={lastImport.imported_videos} />
+                            <RestoreMetric label="Usage profiles" value={lastImport.imported_usage_profiles} />
+                            <RestoreMetric label="Used videos" value={lastImport.imported_profile_used_videos} />
+                            <RestoreMetric label="Doc sync cache" value={lastImport.imported_profile_doc_syncs} />
+                            <RestoreMetric label="User settings" value={lastImport.imported_usage_user_settings} />
+                            {lastImport.user_restore_error && (
+                                <div>
+                                    <span>Cảnh báo restore user</span>
+                                    <strong>{lastImport.user_restore_error}</strong>
+                                </div>
+                            )}
                         </div>
                     )}
                 </article>

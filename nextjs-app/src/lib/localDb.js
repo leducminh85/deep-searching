@@ -31,6 +31,14 @@ export function getPool() {
     return pool;
 }
 
+export async function resetLocalDbPool() {
+    const currentPool = pool;
+    pool = null;
+    if (currentPool) {
+        await currentPool.end().catch(() => {});
+    }
+}
+
 export async function ensureUsageSchema() {
     if (!usageSchemaPromise) {
         usageSchemaPromise = (async () => {
