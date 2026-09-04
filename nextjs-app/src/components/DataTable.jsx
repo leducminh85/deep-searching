@@ -17,7 +17,7 @@ const canHighlightMatch = (text, start, end) => {
 
 const DISPLAY_DATE_OFFSET_MINUTES = 7 * 60;
 const NUMBER_FORMAT_LOCALE = 'vi-VN';
-const AI_SEARCH_ENABLED = false;
+const AI_SEARCH_ENABLED = true;
 
 const formatCount = (value) => Number(value || 0).toLocaleString(NUMBER_FORMAT_LOCALE);
 
@@ -1953,6 +1953,18 @@ const DataTable = ({
         return '';
     };
 
+    const activeSearchMode = activeSearchTab === 'ai' ? 'ai' : searchMode;
+    const activeSearchModeTitle = activeSearchMode === 'ai'
+        ? 'Tim kiem bang AI'
+        : searchMode === 'or'
+            ? 'Ket qua chi can chua it nhat mot tu khoa'
+            : 'Ket qua phai chua tat ca tu khoa';
+    const searchModeOptions = [
+        ['and', 'AND', 'Ket qua phai chua tat ca tu khoa'],
+        ['or', 'OR', 'Ket qua chi can chua it nhat mot tu khoa'],
+        ...(AI_SEARCH_ENABLED ? [['ai', 'AI', 'Tim kiem bang AI']] : []),
+    ];
+
     return (
         <>
             <div
@@ -2173,33 +2185,30 @@ const DataTable = ({
                     <div className="search-mode-menu-wrap tour-search-mode" ref={searchModeMenuRef}>
                         <button
                             type="button"
-                            className={`search-mode-trigger mode-${searchMode} ${isSearchModeOpen ? 'open' : ''}`}
+                            className={`search-mode-trigger mode-${activeSearchMode} ${isSearchModeOpen ? 'open' : ''}`}
                             onClick={() => setIsSearchModeOpen((open) => !open)}
-                            title={searchMode === 'or' ? 'Kết quả chỉ cần chứa ít nhất một từ khóa' : 'Kết quả phải chứa tất cả từ khóa'}
+                            title={activeSearchModeTitle}
                             aria-label="Chọn điều kiện tìm kiếm từ khóa"
                             aria-haspopup="menu"
                             aria-expanded={isSearchModeOpen}
                         >
-                            <span>{searchMode.toUpperCase()}</span>
+                            <span>{activeSearchMode.toUpperCase()}</span>
                             <ChevronDown className="search-mode-chevron" size={16} aria-hidden="true" />
                         </button>
 
                         {isSearchModeOpen && (
                             <div className="search-mode-menu" role="menu">
-                                {[
-                                    ['and', 'AND', 'Kết quả phải chứa tất cả từ khóa'],
-                                    ['or', 'OR', 'Kết quả chỉ cần chứa ít nhất một từ khóa'],
-                                ].map(([value, label, title]) => (
+                                {searchModeOptions.map(([value, label, title]) => (
                                     <button
                                         key={value}
                                         type="button"
                                         role="menuitem"
-                                        className={`search-mode-option mode-${value} ${activeSearchTab === 'keyword' && searchMode === value ? 'active' : ''}`}
+                                        className={`search-mode-option mode-${value} ${activeSearchMode === value ? 'active' : ''}`}
                                         onClick={() => handleSearchModeSelect(value)}
                                         title={title}
                                     >
                                         <span>{label}</span>
-                                        {activeSearchTab === 'keyword' && searchMode === value && <Check size={14} className="search-mode-check" />}
+                                        {activeSearchMode === value && <Check size={14} className="search-mode-check" />}
                                     </button>
                                 ))}
                             </div>

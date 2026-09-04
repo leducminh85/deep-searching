@@ -1,0 +1,2 @@
+docker/daily-update-cron/crontab text eol=lf
+docker/daily-update-cron/*.sh text eol=lf
