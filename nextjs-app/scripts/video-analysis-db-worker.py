@@ -68,6 +68,43 @@ def log(level, message):
     emit("LOG", {"level": level, "message": str(message)})
 
 
+def is_valid_netscape_cookie_file(file_path):
+    """Return True only for a usable Netscape-format cookie file."""
+    try:
+        with open(file_path, "r", encoding="utf-8-sig") as handle:
+            lines = handle.read().splitlines()
+    except (OSError, UnicodeError):
+        return False
+
+    first_non_empty = next((line.strip() for line in lines if line.strip()), "")
+    if first_non_empty not in {
+        "# Netscape HTTP Cookie File",
+        "# HTTP Cookie File",
+    }:
+        return False
+
+    cookie_count = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or (stripped.startswith("#") and not stripped.startswith("#HttpOnly_")):
+            continue
+
+        fields = line.split("\t")
+        if len(fields) != 7:
+            return False
+
+        domain, include_subdomains, path, secure, expires, _name, _value = fields
+        if not domain or not path:
+            return False
+        if include_subdomains not in {"TRUE", "FALSE"} or secure not in {"TRUE", "FALSE"}:
+            return False
+        if expires and not expires.isdigit():
+            return False
+        cookie_count += 1
+
+    return cookie_count > 0
+
+
 def find_cookie_files():
     candidates = []
     for env_name in ("COOKIES_FILE", "COOKIES_FILE_2"):
@@ -89,7 +126,13 @@ def find_cookie_files():
         resolved = os.path.abspath(candidate)
         if resolved not in seen and os.path.exists(resolved):
             seen.add(resolved)
-            files.append(resolved)
+            if is_valid_netscape_cookie_file(resolved):
+                files.append(resolved)
+            else:
+                log(
+                    "warning",
+                    f"Ignoring invalid Netscape cookie file: {os.path.basename(resolved)}",
+                )
     return files
 
 
