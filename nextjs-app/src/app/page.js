@@ -1,5 +1,6 @@
 import React from 'react';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { createClient } from '../utils/supabase/server';
 import { getActiveProfile } from '../lib/usageProfiles';
 import { getDataInternal } from './api/data/route';
@@ -11,7 +12,16 @@ const VALID_SEARCH_MODES = new Set(['and', 'or']);
 export default async function HomePage() {
   const supabase = await createClient();
   const cookieStore = await cookies();
-  const { data: { user } } = await supabase.auth.getUser();
+  let user = null;
+
+  try {
+    const result = await supabase.auth.getUser();
+    if (!result.error) user = result.data.user;
+  } catch (error) {
+    console.warn('[home] Unable to validate session:', error?.message || error);
+  }
+
+  if (!user) redirect('/login');
 
   const page = 1;
   const pageSize = 50;

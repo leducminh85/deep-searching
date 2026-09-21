@@ -21,6 +21,22 @@ const NAV_ITEMS = [
     { href: '/admin/backups', label: 'Sao lưu', description: 'Phục hồi dữ liệu', icon: DatabaseBackup },
 ];
 
+function readTheme() {
+    try {
+        return window.localStorage.getItem('theme') || 'dark';
+    } catch {
+        return 'dark';
+    }
+}
+
+function persistTheme(theme) {
+    try {
+        window.localStorage.setItem('theme', theme);
+    } catch {
+        // Keep the selected theme in memory if storage is unavailable.
+    }
+}
+
 export default function AdminLayoutClient({ children }) {
     const pathname = usePathname();
     const router = useRouter();
@@ -38,14 +54,14 @@ export default function AdminLayoutClient({ children }) {
     }, [pathname]);
 
     useEffect(() => {
-        const saved = localStorage.getItem('theme') || 'dark';
+        const saved = readTheme();
         setTheme(saved);
         document.documentElement.setAttribute('data-theme', saved);
     }, []);
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
-        localStorage.setItem('theme', theme);
+        persistTheme(theme);
     }, [theme]);
 
     useEffect(() => {

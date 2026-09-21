@@ -1,4 +1,5 @@
 import './globals.css';
+import ClientErrorReporter from '../components/ClientErrorReporter';
 
 export const metadata = {
   title: 'Wevic - Deep Video Search',
@@ -13,6 +14,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
+        <ClientErrorReporter />
         {children}
       </body>
     </html>

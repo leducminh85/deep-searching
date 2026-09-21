@@ -4,7 +4,8 @@ import { NextResponse } from 'next/server'
 function isInvalidRefreshTokenError(error) {
   return error?.code === 'refresh_token_not_found'
     || error?.code === 'invalid_refresh_token'
-    || /invalid refresh token|refresh token not found/i.test(String(error?.message || ''))
+    || error?.code === 'session_not_found'
+    || /invalid refresh token|refresh token not found|auth session missing/i.test(String(error?.message || ''))
 }
 
 function clearSupabaseCookies(request, response) {
@@ -22,6 +23,37 @@ function isPublicAuthPath(pathname) {
     || pathname.startsWith('/auth')
     || pathname.startsWith('/api/auth')
     || pathname.startsWith('/api/admin')
+}
+
+function authFailureResponse(request, supabaseResponse, error) {
+  const invalidSession = isInvalidRefreshTokenError(error)
+  const status = invalidSession ? 401 : 503
+  const message = invalidSession ? 'Unauthorized' : 'Authentication service unavailable'
+
+  if (!invalidSession) {
+    console.warn('[auth] Unable to validate session', {
+      path: request.nextUrl.pathname,
+      code: error?.code || null,
+      message: String(error?.message || error || 'Unknown authentication error'),
+    })
+  }
+
+  if (isPublicAuthPath(request.nextUrl.pathname)) {
+    return invalidSession
+      ? clearSupabaseCookies(request, supabaseResponse)
+      : supabaseResponse
+  }
+
+  if (request.nextUrl.pathname.startsWith('/api/')) {
+    const response = NextResponse.json({ error: message }, { status })
+    return invalidSession ? clearSupabaseCookies(request, response) : response
+  }
+
+  const url = request.nextUrl.clone()
+  url.pathname = '/login'
+  url.searchParams.set('reason', invalidSession ? 'session_expired' : 'auth_unavailable')
+  const response = NextResponse.redirect(url)
+  return invalidSession ? clearSupabaseCookies(request, response) : response
 }
 
 export async function updateSession(request) {
@@ -57,24 +89,12 @@ export async function updateSession(request) {
   let user = null
   try {
     const result = await supabase.auth.getUser()
+    if (result.error) {
+      return authFailureResponse(request, supabaseResponse, result.error)
+    }
     user = result.data.user
   } catch (error) {
-    if (!isInvalidRefreshTokenError(error)) throw error
-
-    if (isPublicAuthPath(request.nextUrl.pathname)) {
-      return clearSupabaseCookies(request, supabaseResponse)
-    }
-
-    if (request.nextUrl.pathname.startsWith('/api/')) {
-      return clearSupabaseCookies(
-        request,
-        NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      )
-    }
-
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return clearSupabaseCookies(request, NextResponse.redirect(url))
+    return authFailureResponse(request, supabaseResponse, error)
   }
 
   if (

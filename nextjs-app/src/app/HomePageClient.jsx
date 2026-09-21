@@ -14,12 +14,36 @@ const ADVANCED_TUTORIAL_VIDEO_SRC = '/toturial.mp4';
 
 function getCookieValue(name) {
   if (typeof document === 'undefined') return null;
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
-  return match ? decodeURIComponent(match[1]) : null;
+  try {
+    const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
 }
 
 function setClientCookie(name, value) {
-  document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${SEARCH_MODE_COOKIE_MAX_AGE}; SameSite=Lax`;
+  try {
+    document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${SEARCH_MODE_COOKIE_MAX_AGE}; SameSite=Lax`;
+  } catch {
+    // Browsers may block cookie writes in restricted/privacy contexts.
+  }
+}
+
+function readClientSetting(name, fallback = null) {
+  try {
+    return window.localStorage.getItem(name) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeClientSetting(name, value) {
+  try {
+    window.localStorage.setItem(name, value);
+  } catch {
+    // Keep the in-memory setting when persistent storage is unavailable.
+  }
 }
 
 export default function HomePageClient({ initialData, initialProfile = null, initialSearchMode = 'and', currentUserKey = 'anonymous' }) {
@@ -88,12 +112,12 @@ export default function HomePageClient({ initialData, initialProfile = null, ini
   ];
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    const savedHighlight = localStorage.getItem('highlightEnabled');
-    const savedSearchMode = localStorage.getItem('searchMode');
+    const savedTheme = readClientSetting('theme', 'dark');
+    const savedHighlight = readClientSetting('highlightEnabled');
+    const savedSearchMode = readClientSetting('searchMode');
     const cookieSearchMode = getCookieValue('searchMode');
-    const savedTranslate = localStorage.getItem('translateEnabled');
-    const savedCaptionSearch = localStorage.getItem('captionSearchEnabled');
+    const savedTranslate = readClientSetting('translateEnabled');
+    const savedCaptionSearch = readClientSetting('captionSearchEnabled');
 
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
@@ -106,8 +130,8 @@ export default function HomePageClient({ initialData, initialProfile = null, ini
     if (savedTranslate !== null) setTranslateEnabled(savedTranslate === 'true');
     if (savedCaptionSearch !== null) setCaptionSearchEnabled(savedCaptionSearch === 'true');
 
-    const hasSeenTour = localStorage.getItem('hasSeenTour');
-    const hasSeenTutorial = localStorage.getItem(tutorialStorageKey);
+    const hasSeenTour = readClientSetting('hasSeenTour');
+    const hasSeenTutorial = readClientSetting(tutorialStorageKey);
     if (!hasSeenTutorial) {
       setShouldRunTourAfterTutorial(!hasSeenTour);
       setShowTutorialModal(true);
@@ -121,24 +145,24 @@ export default function HomePageClient({ initialData, initialProfile = null, ini
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
+    writeClientSetting('theme', theme);
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem('highlightEnabled', highlightEnabled);
+    writeClientSetting('highlightEnabled', highlightEnabled);
   }, [highlightEnabled]);
 
   useEffect(() => {
-    localStorage.setItem('searchMode', searchMode);
+    writeClientSetting('searchMode', searchMode);
     setClientCookie('searchMode', searchMode);
   }, [searchMode]);
 
   useEffect(() => {
-    localStorage.setItem('translateEnabled', translateEnabled);
+    writeClientSetting('translateEnabled', translateEnabled);
   }, [translateEnabled]);
 
   useEffect(() => {
-    localStorage.setItem('captionSearchEnabled', captionSearchEnabled);
+    writeClientSetting('captionSearchEnabled', captionSearchEnabled);
   }, [captionSearchEnabled]);
 
   const toggleTheme = () => {
@@ -165,7 +189,7 @@ export default function HomePageClient({ initialData, initialProfile = null, ini
     tutorialVideoRef.current?.pause();
     setIsTutorialVideoPlaying(false);
     setShowTutorialModal(false);
-    localStorage.setItem(tutorialStorageKey, 'true');
+    writeClientSetting(tutorialStorageKey, 'true');
 
     if (shouldRunTourAfterTutorial) {
       setShouldRunTourAfterTutorial(false);
@@ -217,7 +241,7 @@ export default function HomePageClient({ initialData, initialProfile = null, ini
     const finishedStatuses = ['finished', 'skipped'];
     if (finishedStatuses.includes(status)) {
       setRunTour(false);
-      localStorage.setItem('hasSeenTour', 'true');
+      writeClientSetting('hasSeenTour', 'true');
     }
   };
 
