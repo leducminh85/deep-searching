@@ -722,7 +722,7 @@ const DataTable = ({
     const abortControllerRef = useRef(null);
     const progressIntervalRef = useRef(null);
     const [inputValue, setInputValue] = useState('');
-    const [sortConfig, setSortConfig] = useState({ key: 'date_published', direction: 'desc', userSelected: false });
+    const [sortConfig, setSortConfig] = useState({ key: 'date_published', direction: 'desc' });
 
     // Autocomplete state
     const [suggestions, setSuggestions] = useState([]);
@@ -1030,8 +1030,7 @@ const DataTable = ({
         setError(null);
 
         try {
-            const hasActiveSearch = Boolean(query?.trim() || (mode === 'advanced' && advancedQuery));
-            const sortParam = hasActiveSearch && !sort.userSelected ? 'relevance' : (sort.key || 'date_published');
+            const sortParam = sort.key || 'date_published';
             const orderParam = sort.direction;
 
             // Build filter query params
@@ -1481,7 +1480,7 @@ const DataTable = ({
         if (sortConfig.key === key && sortConfig.direction === 'asc') {
             direction = 'desc';
         }
-        setSortConfig({ key, direction, userSelected: true });
+        setSortConfig({ key, direction });
         setPage(1); // Reset về trang 1 khi đổi sắp xếp
     };
 

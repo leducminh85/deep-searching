@@ -22,7 +22,7 @@ export async function GET(request) {
         const rawSize = parseInt(searchParams.get('size') || '20', 10);
         const pageSize = Math.min(rawSize, 100); 
         
-        const sortBy = searchParams.get('sort') || 'Created At';
+        const sortBy = searchParams.get('sort') || 'date_published';
         const sortOrder = searchParams.get('order') || 'desc';
         const mode = searchParams.get('mode') || 'or';
         const advancedQuery = searchParams.get('advanced_query') || null;

@@ -685,7 +685,7 @@ export async function queryVideos({
     query = null,
     page = 1,
     pageSize = 50,
-    sortBy = 'created_at',
+    sortBy = 'date_published',
     sortOrder = 'desc',
     mode = 'or',
     minViews = null,
