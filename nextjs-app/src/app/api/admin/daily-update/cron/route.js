@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { startDailyUpdateTask } from '../../../../../lib/dailyUpdateTask';
+import { startDailyUpdateTask, stopDailyUpdateTask } from '../../../../../lib/dailyUpdateTask';
 
 export const runtime = 'nodejs';
 
@@ -30,6 +30,26 @@ export async function POST(request) {
 
     if (!safeEqual(requestToken(request), expected)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    let body = {};
+    try {
+        body = await request.json();
+    } catch {
+        // Keep supporting existing cron callers without a request body.
+    }
+
+    const action = body?.action ?? 'start';
+    if (action === 'stop') {
+        const result = stopDailyUpdateTask();
+        return NextResponse.json({
+            triggered_by: 'cron',
+            stopped: result.stopped,
+            ...result.status,
+        });
+    }
+    if (action !== 'start') {
+        return NextResponse.json({ error: 'Unsupported action' }, { status: 400 });
     }
 
     const result = startDailyUpdateTask();

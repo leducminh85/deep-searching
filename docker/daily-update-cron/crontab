@@ -1,1 +1,2 @@
-0 2 * * * /cron/run-daily-update.sh
+5 6 * * * /cron/run-daily-update.sh
+0 8 * * * /cron/run-daily-update.sh stop
